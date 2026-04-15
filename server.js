@@ -3,7 +3,8 @@ const path    = require('path');
 const fs      = require('fs');
 const https   = require('https');
 const XLSX    = require('xlsx');
-const { syncDrive, getLastSyncInfo, credentialsExist } = require('./drive-sync');
+const { syncDrive, getLastSyncInfo: getDriveSyncInfo, credentialsExist } = require('./drive-sync');
+const { syncHospital, getLastSyncInfo: getHospitalSyncInfo } = require('./hospital-sync');
 
 // ── Supabase Storage (mismas credenciales que el frontend) ────
 const SUPA_HOST = 'sstuwlwukjokhjbtelig.supabase.co';
@@ -89,28 +90,34 @@ app.delete('/api/data/:table', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Sincronización Google Sheets ──────────────────────────────
-
+// ── Sincronización HOSPITAL (sin Google) ──────────────────────
 let syncInProgress = false;
 let syncLog = [];
 
 app.get('/api/drive-status', (req, res) => {
   res.json({
-    configured: credentialsExist(),
+    configured: true,
     inProgress: syncInProgress,
-    lastSync: getLastSyncInfo(),
+    lastSync: getHospitalSyncInfo() || getDriveSyncInfo(),
   });
 });
 
+// Endpoint principal — descarga directo del hospital → Supabase
 app.post('/api/drive-sync', async (req, res) => {
   if (syncInProgress) return res.json({ ok: false, error: 'Sincronización ya en progreso' });
   const force = req.body && req.body.force === true;
   syncInProgress = true;
   syncLog = [];
   try {
-    const result = await syncDrive({ force, onProgress: msg => syncLog.push(msg) });
+    const result = await syncHospital({ force, onProgress: msg => syncLog.push(msg) });
     syncInProgress = false;
-    res.json({ ok: true, result, log: syncLog });
+    if (result.ok && !result.skipped) {
+      res.json({ ok: true, result: { synced: [{ name: 'DATOS', rows: result.rows }] }, log: syncLog });
+    } else if (result.skipped) {
+      res.json({ ok: true, result: { skipped: [{ name: 'DATOS', reason: 'Datos recientes' }] }, log: syncLog });
+    } else {
+      res.json({ ok: false, error: result.error, log: syncLog });
+    }
   } catch (err) {
     syncInProgress = false;
     res.status(500).json({ ok: false, error: err.message });
@@ -121,20 +128,15 @@ app.get('/api/drive-sync-log', (req, res) => {
   res.json({ inProgress: syncInProgress, log: syncLog });
 });
 
-// ── Cron diario para Vercel (llamado por Vercel Cron Jobs) ────
-// Vercel llama a este endpoint según el schedule en vercel.json
-app.get('/api/cron-sync', async (req, res) => {
-  // Verificar que viene de Vercel cron (header de seguridad)
-  const auth = req.headers['authorization'];
-  if (process.env.VERCEL && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+// Cron diario Vercel — descarga automática del hospital a las 7 AM Colombia
+app.get('/api/hospital-sync', async (req, res) => {
   if (syncInProgress) return res.json({ ok: false, message: 'Ya en progreso' });
   syncInProgress = true;
+  syncLog = [];
   try {
-    const result = await syncDrive({ force: false });
+    const result = await syncHospital({ force: false, onProgress: msg => syncLog.push(msg) });
     syncInProgress = false;
-    res.json({ ok: true, synced: result.synced?.length || 0, skipped: result.skipped?.length || 0 });
+    res.json({ ok: result.ok, rows: result.rows || 0, skipped: !!result.skipped, error: result.error, log: syncLog });
   } catch (err) {
     syncInProgress = false;
     res.status(500).json({ ok: false, error: err.message });
@@ -213,16 +215,16 @@ app.post('/api/upload-from-script', express.raw({ type: '*/*', limit: '20mb' }),
 // ── Solo en local: sync al arrancar ──────────────────────────
 if (!process.env.VERCEL) {
   setTimeout(async () => {
-    console.log('\n🔄 Sincronizando con Google Sheets al inicio...');
+    console.log('\n🔄 Sincronizando con hospital al inicio...');
     syncInProgress = true;
     try {
-      const result = await syncDrive({ force: false });
-      if (result.synced?.length > 0) {
-        console.log(`✅ ${result.synced[0].rows.toLocaleString()} registros cargados.`);
-      } else if (result.skipped?.length > 0) {
+      const result = await syncHospital({ force: false });
+      if (result.ok && !result.skipped) {
+        console.log(`✅ ${(result.rows||0).toLocaleString()} registros cargados del hospital.`);
+      } else if (result.skipped) {
         console.log('⏭️  Datos recientes, sin re-descarga.');
-      } else if (!result.ok) {
-        console.log(`❌ ${result.error}`);
+      } else {
+        console.log(`⚠️  ${result.error}`);
       }
     } catch (err) { console.error('❌ Error:', err.message); }
     syncInProgress = false;
