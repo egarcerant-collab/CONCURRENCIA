@@ -381,7 +381,20 @@ const APP = (() => {
 
   function dashboard() {
     const el = document.getElementById('tab-dashboard');
-    if (!state.rows.length) { el.innerHTML = noData('Sube el archivo DETALLADO_AUDITORIA_HOSPITALARIA para comenzar'); return; }
+    if (!state.rows.length) {
+      el.innerHTML = `<div class="no-data">
+        <div class="nd-icon">📂</div>
+        <p>No hay datos. Haz clic en <b>🔄 Descargar desde Google Sheets</b> para cargar automáticamente.</p>
+        <button onclick="APP.driveSync(true)"
+          style="margin-top:16px;padding:12px 28px;background:#0f9d58;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
+          🔄 Descargar desde Google Sheets
+        </button>
+        <div id="drive-log-box-dash" style="display:none;margin-top:16px;background:#1e1e1e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto;text-align:left;max-width:600px">
+          <div id="drive-log-content-dash"></div>
+        </div>
+      </div>`;
+      return;
+    }
     const d = CALCS.calcResumen(state.rows, state.filters);
     const r = CALCS.applyFilters(state.rows, state.filters);
     const extraFuentes = [
@@ -410,7 +423,9 @@ const APP = (() => {
         <span style="font-size:18px">📊</span>
         <div style="flex:1;min-width:200px">
           <div style="font-weight:700;font-size:13px;color:#2e7d32">Google Sheets — Sincronización Automática</div>
-          <div style="font-size:11px;color:#555;margin-top:1px">El Apps Script actualiza el Sheet cada día a las 7 AM · la app lo descarga automáticamente · <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2" target="_blank" style="color:#0f9d58">Ver archivo fuente</a></div>
+          <div style="font-size:11px;color:#555;margin-top:1px">El Apps Script actualiza el Sheet cada día a las 7 AM · <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2" target="_blank" style="color:#0f9d58">Ver archivo fuente</a>
+            ${state.uploadedAt.detallado ? ` · <span style="color:#2e7d32;font-weight:600">📅 Última descarga: ${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+          </div>
         </div>
         <button id="btn-dash-sync" onclick="APP.driveSync(true)"
           style="padding:9px 20px;background:#0f9d58;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
@@ -1638,12 +1653,17 @@ const APP = (() => {
     },
     driveSync: async (force=false) => {
       const btn = document.getElementById(force?'btn-drive-force':'btn-drive-sync');
+      const btnDash = document.getElementById('btn-dash-sync');
       const btnTopbar = document.getElementById('btn-topbar-sync');
       const logBox = document.getElementById('drive-log-box');
+      const logBoxDash = document.getElementById('drive-log-box-dash');
       const logContent = document.getElementById('drive-log-content');
+      const logContentDash = document.getElementById('drive-log-content-dash');
       if (btn) { btn.disabled=true; btn.textContent='⏳ Sincronizando...'; }
+      if (btnDash) { btnDash.disabled=true; btnDash.textContent='⏳ Descargando...'; }
       if (btnTopbar) { btnTopbar.disabled=true; btnTopbar.textContent='⏳ Actualizando...'; }
       if (logBox) { logBox.style.display='block'; logContent.innerHTML=''; }
+      if (logBoxDash) { logBoxDash.style.display='block'; if(logContentDash) logContentDash.innerHTML=''; }
       toast('🔄 Descargando desde Google Sheets...','info');
       try {
         const r = await fetch('/api/drive-sync',{
@@ -1655,6 +1675,10 @@ const APP = (() => {
         if (logContent && r.log) {
           logContent.innerHTML = r.log.map(l=>`<div>${l}</div>`).join('');
           logBox.scrollTop = logBox.scrollHeight;
+        }
+        if (logContentDash && r.log) {
+          logContentDash.innerHTML = r.log.map(l=>`<div>${l}</div>`).join('');
+          if (logBoxDash) logBoxDash.scrollTop = logBoxDash.scrollHeight;
         }
 
         if (!r.ok) {
@@ -1679,6 +1703,7 @@ const APP = (() => {
         toast('❌ Error: '+e.message,'error');
       }
       if (btn) { btn.disabled=false; btn.textContent=force?'⚡ Forzar re-descarga (todo)':'🔄 Sincronizar ahora'; }
+      if (btnDash) { btnDash.disabled=false; btnDash.textContent='🔄 Descargar datos nuevos'; }
       if (btnTopbar) { btnTopbar.disabled=false; btnTopbar.textContent='🔄 Actualizar ahora'; }
     },
     handleUpload,
