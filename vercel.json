@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "server.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/server.js" }
+  ],
+  "functions": {
+    "server.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron-sync", "schedule": "0 11 * * *" }
+  ]
+}

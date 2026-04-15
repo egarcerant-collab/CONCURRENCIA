@@ -1,0 +1,7 @@
+node_modules/
+BASES/
+data/
+*.xlsm
+*.xlsx
+*.xls
+.env

@@ -1,0 +1,16 @@
+{
+  "name": "indicadores-riesgo",
+  "version": "1.0.0",
+  "description": "Dashboard de Indicadores Dirección del Riesgo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}
