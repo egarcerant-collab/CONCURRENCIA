@@ -1,7 +1,43 @@
 const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
+const https   = require('https');
+const XLSX    = require('xlsx');
 const { syncDrive, getLastSyncInfo, credentialsExist } = require('./drive-sync');
+
+// ── Supabase Storage (mismas credenciales que el frontend) ────
+const SUPA_HOST = 'sstuwlwukjokhjbtelig.supabase.co';
+const SUPA_KEY  = 'sb_publishable_kF5Vvgn0HYk7vo-JpPLFjA_BdfmobDK';
+const COLS_DATOS = ['IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion','Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Servicio','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Estancia','Programa Riesgo','Gestacion','Via Parto','Dx Gestante','Control Prenatal','Reingreso','Auditor','Glosas','Valor Total Glosa','Eventos Adversos','Cantidad Evento no calidad','Observación Seguimiento','Patologia alto costo','Especialidad','Patologia Alto Costo','IPS Primaria'];
+
+function uploadToSupabase(jsonStr) {
+  return new Promise((resolve, reject) => {
+    const buf = Buffer.from(jsonStr, 'utf8');
+    const req = https.request({
+      hostname: SUPA_HOST,
+      path: '/storage/v1/object/indicadores/DATOS.json',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'apikey': SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': buf.length,
+        'x-upsert': 'true'
+      }
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(true);
+        else reject(new Error(`Supabase ${res.statusCode}: ${data.slice(0,200)}`));
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Supabase timeout')); });
+    req.write(buf);
+    req.end();
+  });
+}
 
 const app     = express();
 const PORT    = process.env.PORT || 3002;
@@ -102,6 +138,75 @@ app.get('/api/cron-sync', async (req, res) => {
   } catch (err) {
     syncInProgress = false;
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Recibir XLSX directo desde Apps Script → Supabase ─────────
+// Apps Script llama POST /api/upload-from-script con el binario XLSX
+app.post('/api/upload-from-script', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+  try {
+    const buffer = req.body;
+    if (!buffer || buffer.length < 1000) {
+      return res.status(400).json({ ok: false, error: `Datos insuficientes: ${buffer?.length || 0} bytes` });
+    }
+    // Validar magic bytes XLSX (PK = cabecera ZIP)
+    if (buffer[0] !== 0x50 || buffer[1] !== 0x4B) {
+      const preview = buffer.slice(0, 300).toString('utf8');
+      return res.status(400).json({ ok: false, error: 'No es XLSX válido — el servidor del hospital devolvió HTML en vez de Excel. Revisa los IDs del formulario de exportación.', preview });
+    }
+    // Parsear XLSX
+    const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+    let sheetName = wb.SheetNames[0];
+    if (wb.SheetNames.includes('POWEBI')) sheetName = 'POWEBI';
+    else if (wb.SheetNames.includes('DATOS')) sheetName = 'DATOS';
+    const ws = wb.Sheets[sheetName];
+    let rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!rows.length) return res.status(400).json({ ok: false, error: 'El XLSX no tiene filas de datos' });
+
+    // Filtrar solo columnas esenciales (igual que supabase-db.js)
+    if (rows.length > 0) {
+      const reales = Object.keys(rows[0]);
+      const normR = reales.map(r => r.toLowerCase().trim());
+      const usar = COLS_DATOS.filter(c => {
+        return rows[0][c] !== undefined || normR.includes(c.toLowerCase().trim());
+      });
+      if (usar.length > 0) {
+        rows = rows.map(r => {
+          const o = {};
+          usar.forEach(c => { o[c] = r[c] ?? ''; });
+          return o;
+        });
+      }
+    }
+
+    const payload = {
+      rows,
+      fileName: 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
+      uploadedAt: new Date().toISOString(),
+      source: 'apps-script-direct',
+    };
+    const payloadStr = JSON.stringify(payload);
+
+    // 1. Guardar en /tmp (acceso inmediato)
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, 'DATOS.json'), payloadStr);
+    console.log(`[upload-from-script] ${rows.length} filas guardadas en /tmp`);
+
+    // 2. Subir a Supabase Storage (persistencia entre cold starts)
+    let supaOk = false, supaError = null;
+    try {
+      await uploadToSupabase(payloadStr);
+      supaOk = true;
+      console.log(`[upload-from-script] Supabase OK — ${rows.length} filas`);
+    } catch(e) {
+      supaError = e.message;
+      console.error('[upload-from-script] Supabase error:', e.message);
+    }
+
+    res.json({ ok: true, rows: rows.length, sheet: sheetName, supabase: supaOk, supaError, uploadedAt: payload.uploadedAt });
+  } catch(e) {
+    console.error('[upload-from-script]', e);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
