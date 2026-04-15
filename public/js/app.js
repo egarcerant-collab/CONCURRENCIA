@@ -410,7 +410,7 @@ const APP = (() => {
         <span style="font-size:18px">📊</span>
         <div style="flex:1;min-width:200px">
           <div style="font-weight:700;font-size:13px;color:#2e7d32">Google Sheets — Sincronización Automática</div>
-          <div style="font-size:11px;color:#555;margin-top:1px">Actualiza automáticamente cada día a las 6:00 AM · <a href="https://docs.google.com/spreadsheets/d/1YPAvYd1WoQ_7_FbVXxgfcClyxfaDpt1E" target="_blank" style="color:#0f9d58">Ver archivo fuente</a></div>
+          <div style="font-size:11px;color:#555;margin-top:1px">El Apps Script actualiza el Sheet cada día a las 7 AM · la app lo descarga automáticamente · <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2" target="_blank" style="color:#0f9d58">Ver archivo fuente</a></div>
         </div>
         <button id="btn-dash-sync" onclick="APP.driveSync(true)"
           style="padding:9px 20px;background:#0f9d58;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
@@ -1319,7 +1319,7 @@ const APP = (() => {
       <div id="drive-panel" class="upload-section" style="border:2px solid #0f9d58;background:linear-gradient(135deg,#f0fff4,#fff)">
         <h3 style="color:#0f9d58">🔄 Sincronización Automática — Google Sheets</h3>
         <p style="font-size:13px;color:#555;margin-bottom:14px">
-          Conectado a: <a href="https://docs.google.com/spreadsheets/d/1YPAvYd1WoQ_7_FbVXxgfcClyxfaDpt1E/edit" target="_blank" style="color:#0f9d58;font-weight:600">📊 DETALLADO_AUDITORIA_HOSPITALARIA</a>
+          Conectado a: <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2/edit" target="_blank" style="color:#0f9d58;font-weight:600">📊 DETALLADO_AUDITORIA_HOSPITALARIA</a>
           · Sincroniza <b>automáticamente cada día a las 6:00 AM</b>. No requiere ninguna contraseña ni configuración.
         </p>
         <div id="drive-status-box" style="padding:12px 16px;border-radius:8px;background:#fff;border:1px solid #b2dfdb;font-size:12px;margin-bottom:14px;color:#555">

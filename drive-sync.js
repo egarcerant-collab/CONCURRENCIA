@@ -10,7 +10,7 @@ const path     = require('path');
 const fs       = require('fs');
 const XLSX     = require('xlsx');
 
-const SHEET_ID       = '1YPAvYd1WoQ_7_FbVXxgfcClyxfaDpt1E';
+const SHEET_ID       = '1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2';  // ← Sheet que actualiza el Apps Script diariamente
 // En Vercel el filesystem es solo lectura excepto /tmp
 const DATA_DIR       = process.env.VERCEL ? '/tmp/data' : path.join(__dirname, 'data');
 const LAST_SYNC_FILE = path.join(DATA_DIR, '_drive_last_sync.json');
