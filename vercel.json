@@ -5,11 +5,5 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "/server.js" }
-  ],
-  "functions": {
-    "server.js": { "maxDuration": 60 }
-  },
-  "crons": [
-    { "path": "/api/cron-sync", "schedule": "0 11 * * *" }
   ]
 }
