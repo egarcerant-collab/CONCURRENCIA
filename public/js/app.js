@@ -1397,13 +1397,24 @@ const APP = (() => {
         <div style="padding:12px 16px;border-radius:8px;background:#fff3e0;border:1px solid #ff9800;font-size:12px;margin-bottom:14px;color:#555">
           ⚠️ No hay datos cargados. Sube el Excel para activar el dashboard.
         </div>`}
-        <label style="cursor:pointer;display:inline-block">
-          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
-          <span style="display:inline-flex;align-items:center;gap:8px;padding:11px 24px;background:#e67e22;color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid #d35400">
-            📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado Auditoria Hospitalaria'}
-          </span>
-        </label>
-        <div id="drive-log-box" style="display:none"><div id="drive-log-content"></div></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <label style="cursor:pointer;display:inline-block">
+            <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+            <span style="display:inline-flex;align-items:center;gap:8px;padding:11px 24px;background:#e67e22;color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid #d35400">
+              📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
+            </span>
+          </label>
+          <button id="btn-hospital-exec" onclick="APP.hospitalSync()"
+            style="padding:11px 24px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+            ▶ Ejecutar descarga automática
+          </button>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:#888">
+          <b>Subir:</b> manual, tú eliges el archivo · <b>Ejecutar:</b> intenta descargar directo del sistema hospitalario y subir a Supabase
+        </div>
+        <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:220px;overflow-y:auto">
+          <div id="drive-log-content"></div>
+        </div>
       </div>
 
       <div class="upload-section">
@@ -1754,6 +1765,46 @@ const APP = (() => {
     },
     handleUpload,
     handleUploadSource,
+    // ── Descarga directa del sistema hospitalario → Supabase ──
+    hospitalSync: async () => {
+      const btn = document.getElementById('btn-hospital-exec');
+      const logBox = document.getElementById('drive-log-box');
+      const logContent = document.getElementById('drive-log-content');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Ejecutando...'; }
+      if (logBox) { logBox.style.display = 'block'; }
+      if (logContent) { logContent.innerHTML = '<div style="color:#fff">🔄 Conectando al sistema hospitalario...</div>'; }
+      toast('🔄 Descargando del hospital...', 'info');
+      try {
+        const r = await fetch('/api/drive-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: true }),
+        }).then(x => x.json());
+
+        // Mostrar log
+        if (logContent && r.log && r.log.length) {
+          logContent.innerHTML = r.log.map(l => `<div>${l}</div>`).join('');
+          if (logBox) logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        if (!r.ok) {
+          toast('❌ ' + (r.error || 'Error en la descarga'), 'error');
+          if (logContent) logContent.innerHTML += `<div style="color:#ff6b6b">❌ ${r.error}</div>`;
+        } else if (r.result && r.result.skipped) {
+          toast('ℹ️ Datos ya estaban actualizados en la nube', 'info');
+        } else {
+          const rows = r.result && r.result.synced && r.result.synced[0] && r.result.synced[0].rows;
+          toast(`✅ ${rows ? fmtN(rows) + ' registros' : 'Datos'} descargados y guardados en Supabase`, 'success');
+          // Recargar datos en pantalla
+          await loadSaved();
+          render();
+        }
+      } catch(e) {
+        toast('❌ Error: ' + e.message, 'error');
+        if (logContent) logContent.innerHTML += `<div style="color:#ff6b6b">❌ ${e.message}</div>`;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Ejecutar descarga automática'; }
+    },
     saveToCloud: async () => {
       if (!window.SUPA_DB) { toast('❌ Supabase no disponible','error'); return; }
       const btn = document.getElementById('btn-save-cloud');
