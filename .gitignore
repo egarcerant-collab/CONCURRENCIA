@@ -5,3 +5,17 @@ data/
 *.xlsx
 *.xls
 .env
+
+.vercel
+
+# Archivos de diagnóstico (no van al repo)
+debug-hospital-v*.js
+debug_*.html
+debug_*.xml
+ajax_*.xml
+page_*.html
+search_*.html
+search_*.xml
+funciones.js
+filedownload.js
+EXPORT_ENCONTRADO*.xlsx
