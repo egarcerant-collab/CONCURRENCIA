@@ -50,6 +50,10 @@
     <h1 id="topbar-title">⚙️ Cargar Datos</h1>
     <div class="topbar-right">
       <span id="data-status" class="badge-periodo" style="background:#e74c3c">Sin datos</span>
+      <button id="btn-save-supa" onclick="APP.saveDetallado()"
+        style="display:none;padding:8px 18px;border:none;border-radius:8px;background:#8e44ad;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+        💾 Guardar en Supabase
+      </button>
       <label id="lbl-upload-topbar" style="cursor:pointer" title="Sube el Excel DETALLADO_AUDITORIA_HOSPITALARIA descargado del sistema hospitalario">
         <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
         <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;box-shadow:0 2px 6px rgba(0,0,0,0.2)">

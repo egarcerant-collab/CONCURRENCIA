@@ -331,9 +331,12 @@ const APP = (() => {
     const total = state.rows.length;
     const extra = (state.rcvRows.length?1:0)+(state.aiuRows.length?1:0)+
                   (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0);
-    // Mostrar botón de guardar en nube si hay datos y Supabase disponible
+    // Mostrar botón Guardar en Supabase cuando hay datos cargados
+    const btnSupa = document.getElementById('btn-save-supa');
+    if (btnSupa) btnSupa.style.display = total > 0 ? 'inline-block' : 'none';
+    // (btn-save-cloud legacy — ocultar siempre)
     const btnCloud = document.getElementById('btn-save-cloud');
-    if (btnCloud) btnCloud.style.display = (total > 0 && window.SUPA_DB) ? 'inline-block' : 'none';
+    if (btnCloud) btnCloud.style.display = 'none';
     const el = document.getElementById('data-status');
     if (total > 0) {
       el.textContent = fmtN(total)+(extra>0?` +${extra} fuentes`:'');
@@ -1765,6 +1768,39 @@ const APP = (() => {
     },
     handleUpload,
     handleUploadSource,
+    // ── Guardar datos actuales en Supabase ────────────────────
+    saveDetallado: async () => {
+      if (!state.rows.length) { toast('⚠️ No hay datos cargados para guardar','error'); return; }
+      const btn = document.getElementById('btn-save-supa');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+      toast('⏳ Guardando en Supabase...', 'info');
+      try {
+        const r = await fetch('/api/save-detallado', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rows: state.rows,
+            fileName: state.fileNames.detallado || 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
+            tipoReporte: state.tipoReporte || 1,
+            source: state.source || 'manual-upload',
+          }),
+        }).then(x => x.json());
+        if (!r.ok) {
+          toast('❌ Error al guardar: ' + r.error, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar en Supabase'; }
+        } else {
+          if (r.uploadedAt) state.uploadedAt.detallado = r.uploadedAt;
+          toast(`✅ ${fmtN(r.rows)} registros guardados en Supabase ☁️`, 'success');
+          if (btn) { btn.disabled = false; btn.textContent = '✅ Guardado en Supabase'; btn.style.background='#27ae60';
+            setTimeout(() => { btn.textContent='💾 Guardar en Supabase'; btn.style.background='#8e44ad'; }, 4000);
+          }
+          render(); // refrescar dashboard con fecha actualizada
+        }
+      } catch(e) {
+        toast('❌ Error: ' + e.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar en Supabase'; }
+      }
+    },
     // ── Descarga directa del sistema hospitalario → Supabase ──
     hospitalSync: async () => {
       const btn = document.getElementById('btn-hospital-exec');

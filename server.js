@@ -64,6 +64,35 @@ app.post('/api/data/:table', (req, res) => {
   }
 });
 
+// ── Guardar Detallado en Supabase (recibe JSON desde el browser) ──
+// Se llama desde el botón "Guardar en Supabase" del dashboard
+app.post('/api/save-detallado', async (req, res) => {
+  try {
+    const { rows, fileName, tipoReporte = 1, source = 'manual-upload' } = req.body || {};
+    if (!rows || !rows.length) {
+      return res.status(400).json({ ok: false, error: 'No hay filas para guardar' });
+    }
+    const payload = {
+      rows,
+      fileName: fileName || 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
+      tipoReporte,
+      source,
+      uploadedAt: new Date().toISOString(),
+    };
+    const payloadStr = JSON.stringify(payload);
+    // Guardar en /tmp
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, 'DATOS.json'), payloadStr);
+    // Subir a Supabase
+    await uploadToSupabase(payloadStr);
+    console.log(`[save-detallado] ✅ ${rows.length} filas guardadas en Supabase`);
+    res.json({ ok: true, rows: rows.length, uploadedAt: payload.uploadedAt });
+  } catch(e) {
+    console.error('[save-detallado]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/data/:table', (req, res) => {
   const filePath = path.join(DATA_DIR, `${req.params.table}.json`);
   if (!fs.existsSync(filePath)) return res.json(null);
