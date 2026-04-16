@@ -50,17 +50,11 @@
     <h1 id="topbar-title">⚙️ Cargar Datos</h1>
     <div class="topbar-right">
       <span id="data-status" class="badge-periodo" style="background:#e74c3c">Sin datos</span>
-      <button id="btn-topbar-sync" onclick="APP.driveSync(true)" title="Descargar datos nuevos desde Google Sheets ahora mismo"
-        style="padding:6px 14px;border:none;border-radius:8px;background:#0f9d58;color:#fff;font-size:12px;font-weight:600;cursor:pointer">
-        🔄 Actualizar ahora
-      </button>
-      <button id="btn-save-cloud" onclick="APP.saveToCloud()" title="Guardar datos en la nube para no tener que cargarlos cada vez"
-        style="display:none;padding:6px 14px;border:none;border-radius:8px;background:#8e44ad;color:#fff;font-size:12px;font-weight:600;cursor:pointer">
-        ☁️ Guardar en nube
-      </button>
-      <label style="cursor:pointer">
-        <input type="file" accept=".xlsx,.xls,.xlsm,.csv" onchange="APP.handleUpload(this)" style="display:none">
-        <span class="btn btn-primary btn-sm">📂 Cargar Excel</span>
+      <label id="lbl-upload-topbar" style="cursor:pointer" title="Sube el Excel DETALLADO_AUDITORIA_HOSPITALARIA descargado del sistema hospitalario">
+        <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+          📤 Subir Detallado
+        </span>
       </label>
     </div>
   </div>

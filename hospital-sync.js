@@ -143,6 +143,41 @@ function isXlsxBuffer(buf) {
   return buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4B;
 }
 
+// ── Verificar tipo de datos existentes en Supabase ───────────
+// Descarga DATOS.json de Supabase y retorna { tipoReporte, source, rows, uploadedAt }
+// Retorna null si no hay datos o falla la descarga
+function checkSupabaseDataType() {
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: SUPA_HOST,
+      path:     '/storage/v1/object/indicadores/DATOS.json',
+      method:   'GET',
+      headers:  {
+        'Authorization': `Bearer ${SUPA_KEY}`,
+        'apikey':        SUPA_KEY,
+      },
+    }, res => {
+      if (res.statusCode !== 200) return resolve(null);
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          resolve({
+            tipoReporte: data.tipoReporte || null,
+            source:      data.source      || null,
+            rows:        Array.isArray(data.rows) ? data.rows.length : 0,
+            uploadedAt:  data.uploadedAt  || null,
+          });
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(20000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
 // ── Supabase Storage upload ───────────────────────────────────
 function uploadSupabase(jsonStr) {
   return new Promise((resolve, reject) => {
@@ -279,44 +314,40 @@ async function syncHospital(options = {}) {
     vs = extractViewState(r3.text());
     if (!vs) throw new Error('ViewState no encontrado en auditoría');
 
-    // ── PASO 4: AJAX j_idt158 con fechas búsqueda ──────────────
-    // (igual que AppsScript_v3: enviar fechas aunque falle validación → nuevo ViewState)
-    log('[4/5] Activando panel exportación (AJAX j_idt158 con fechas)...');
+    // ── PASO 4: NON-AJAX j_idt158 sin fechas (flujo confirmado) ───
+    // Probado: non-AJAX j_idt158 sin fechas → tipo=3 funciona ✅
+    // tipo=1 con fechas vacías sigue dando NPE (bug JSF converter pattern="")
+    log('[4/5] Activando panel exportación (j_idt158 non-AJAX sin fechas)...');
     const r4 = await httpFetch(audUrl, {
       method:  'POST',
-      headers: {
-        'Cookie': cookies, 'Referer': audUrl,
-        'Content-Type':      'application/x-www-form-urlencoded; charset=UTF-8',
-        'Faces-Request':     'partial/ajax',
-        'X-Requested-With':  'XMLHttpRequest',
-      },
+      headers: { 'Cookie': cookies, 'Referer': audUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: buildBody({
-        'javax.faces.partial.ajax':    'true',
-        'javax.faces.source':          'j_idt158',
-        'javax.faces.partial.execute': '@all',
-        'javax.faces.partial.render':  '@all',
-        'j_idt158':                    'j_idt158',
         'formMtto':                    'formMtto',
         'j_idt107_focus':              '',
         'j_idt107_input':              '1',
         'txtNumeroIdentificacionQ':    '',
-        'fechaInicioQ_input':          FECHA_INICIO,
-        'fechaFinQ_input':             hoy,
         'ips_input':                   '',
         'ips_hinput':                  '',
         'cmbEstadoSeguimiento_focus':  '',
         'cmbEstadoSeguimiento_input':  '-1',
+        'j_idt158':                    'j_idt158',
         'javax.faces.ViewState':       vs,
       }),
     });
     cookies = parseCookies(cookies, r4.headers);
-    const ajaxText = r4.text();
-    const vsNuevo  = extractViewState(ajaxText) || vs;
-    log(`AJAX: HTTP ${r4.statusCode} | ${ajaxText.length} bytes | validationFailed:${ajaxText.includes('validationFailed:true')}`);
+    const r4Text  = r4.text();
+    const vsNuevo = extractViewState(r4Text) || vs;
+    const errs4   = (r4Text.match(/ui-messages-error-summary">([^<]+)</g) || []).map(m => m.replace(/.*">/,'').replace('<',''));
+    log(`j_idt158: HTTP ${r4.statusCode} | ${r4.buffer.length} bytes${errs4.length ? ' | err:'+errs4.slice(0,2).join('|').substring(0,80) : ''}`);
 
-    // ── PASO 5a: Detallado Auditoria Hospitalaria (tipo=1) ──────
-    log('[5/5] Descargando XLSX Detallado (tipo=1)...');
-    const r5 = await httpFetch(audUrl, {
+    // ── PASO 5a: Intentar Detallado (tipo=1) con fechas VACÍAS ───
+    // NOTA: Actualmente da NPE en el servidor (bug del bean cuando fechas son null)
+    // Si el servidor hospitalario se corrige, este paso empezará a funcionar
+    log('[5/5] Descargando XLSX...');
+    let xlsxBuf    = null;
+    let tipoReporte = 3;
+
+    const r5a = await httpFetch(audUrl, {
       method:  'POST',
       headers: { 'Cookie': cookies, 'Referer': audUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: buildBody({
@@ -327,8 +358,8 @@ async function syncHospital(options = {}) {
         'j_idt1443_hinput':              '',
         'municipioDepRes_input':         '',
         'municipioDepRes_hinput':        '',
-        'txtFechaAutorizaInicio_input':   FECHA_INICIO,
-        'txtFechaAutorizaFin_input':      hoy,
+        'txtFechaAutorizaInicio_input':  '',   // vacío → bean decide (falla NPE si no hay default)
+        'txtFechaAutorizaFin_input':     '',
         'cmbSwReingreso_focus':          '',
         'cmbSwReingreso_input':          '1',
         'j_idt1460':                     '',
@@ -336,43 +367,32 @@ async function syncHospital(options = {}) {
         'javax.faces.ViewState':         vsNuevo,
       }),
     });
-    cookies = parseCookies(cookies, r5.headers);
-    log(`Tipo=1: HTTP ${r5.statusCode} | ${r5.buffer.length} bytes | XLSX:${isXlsxBuffer(r5.buffer)}`);
+    cookies = parseCookies(cookies, r5a.headers);
+    log(`Tipo=1 (intent): HTTP ${r5a.statusCode} | ${r5a.buffer.length} bytes | XLSX:${isXlsxBuffer(r5a.buffer)}`);
 
-    let xlsxBuf    = null;
-    let tipoReporte = 1;
-
-    if (isXlsxBuffer(r5.buffer)) {
-      xlsxBuf = r5.buffer;
-      log('✅ XLSX Detallado obtenido');
+    if (isXlsxBuffer(r5a.buffer)) {
+      xlsxBuf    = r5a.buffer;
+      tipoReporte = 1;
+      log('✅ XLSX Detallado obtenido (tipo=1)');
     } else {
       // ── PASO 5b: Fallback Registros Abiertos (tipo=3) ─────────
-      // Comprobado: devuelve XLSX real (144 KB, 1670+ filas) sin necesitar fechas
-      log('Tipo=1 devolvió HTML — fallback a Registros Abiertos (tipo=3)...');
+      // CONFIRMADO: non-AJAX j_idt158 sin fechas + tipo=3 → XLSX real ✅
+      log('Tipo=1 devolvió HTML → fallback Registros Abiertos (tipo=3)...');
 
+      // Necesitamos un ViewState fresco para tipo=3 (el anterior puede estar en estado tipo=1)
       const r5b1 = await httpFetch(audUrl, {
         method:  'POST',
-        headers: {
-          'Cookie': cookies, 'Referer': audUrl,
-          'Content-Type':     'application/x-www-form-urlencoded; charset=UTF-8',
-          'Faces-Request':    'partial/ajax',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
+        headers: { 'Cookie': cookies, 'Referer': audUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: buildBody({
-          'javax.faces.partial.ajax':    'true',
-          'javax.faces.source':          'j_idt158',
-          'javax.faces.partial.execute': '@all',
-          'javax.faces.partial.render':  '@all',
-          'j_idt158':                    'j_idt158',
           'formMtto':                    'formMtto',
           'j_idt107_focus':              '',
           'j_idt107_input':              '1',
-          'txtNumeroIdentificacionQ':    '',
           'ips_input':                   '',
           'ips_hinput':                  '',
           'cmbEstadoSeguimiento_focus':  '',
           'cmbEstadoSeguimiento_input':  '-1',
-          'javax.faces.ViewState':       vsNuevo,
+          'j_idt158':                    'j_idt158',
+          'javax.faces.ViewState':       vs,  // ViewState original (antes de tipo=1)
         }),
       });
       cookies = parseCookies(cookies, r5b1.headers);
@@ -394,7 +414,7 @@ async function syncHospital(options = {}) {
       log(`Tipo=3: HTTP ${r5b2.statusCode} | ${r5b2.buffer.length} bytes | XLSX:${isXlsxBuffer(r5b2.buffer)}`);
 
       if (!isXlsxBuffer(r5b2.buffer)) {
-        throw new Error(`Ningún tipo devolvió XLSX. Tipo=1: ${r5.buffer.length}b HTML. Tipo=3: ${r5b2.buffer.length}b HTML`);
+        throw new Error(`Ningún tipo devolvió XLSX. Tipo=1: ${r5a.buffer.length}b. Tipo=3: ${r5b2.buffer.length}b`);
       }
       xlsxBuf     = r5b2.buffer;
       tipoReporte = 3;
@@ -406,6 +426,30 @@ async function syncHospital(options = {}) {
     const { rows, sheetName } = parseXlsx(xlsxBuf, tipoReporte);
     log(`Hoja: "${sheetName}" | Filas: ${rows.length.toLocaleString('es-CO')}`);
     if (!rows.length) throw new Error('El XLSX no tiene filas de datos');
+
+    // ── PROTECCIÓN: no reemplazar tipo=1 manual con tipo=3 automático ─
+    // Si el fallback es tipo=3, verificar que los datos existentes en
+    // Supabase no sean ya tipo=1 (subidos manualmente por el usuario)
+    if (tipoReporte === 3 && !force) {
+      log('Verificando si ya existe Detallado en la nube antes de sobreescribir...');
+      const existing = await checkSupabaseDataType();
+      if (existing && existing.tipoReporte === 1) {
+        const uploadedDesc = existing.uploadedAt
+          ? new Date(existing.uploadedAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })
+          : 'fecha desconocida';
+        log(`☁️  Nube ya tiene Detallado (${existing.rows.toLocaleString()} filas, ${uploadedDesc}).`);
+        log(`   Auto-sync NO sobreescribe datos Detallado con Registros Abiertos.`);
+        log(`   Para actualizar con Registros Abiertos, usa el botón "Forzar".`);
+        result.rows        = existing.rows;
+        result.tipoReporte = 1;
+        result.skipped     = true;
+        result.skipReason  = 'existing-detallado';
+        return result;
+      }
+      if (existing) {
+        log(`Nube tiene tipo=${existing.tipoReporte||'?'} (${existing.rows} filas) → continuando con tipo=3`);
+      }
+    }
 
     const payload = {
       rows,

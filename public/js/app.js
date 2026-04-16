@@ -16,6 +16,8 @@ const APP = (() => {
     activeTab: 'datos',
     fileNames: {},
     uploadedAt: {},   // fecha de última sincronización por fuente
+    tipoReporte: null, // 1=Detallado, 3=Registros Abiertos, null=desconocido
+    source: null,      // 'manual-upload' | 'hospital-direct' | null
     glosasUnlocked: false
   };
 
@@ -232,19 +234,47 @@ const APP = (() => {
   }
 
   // Upload principal (DETALLADO) — desde el topbar
+  // Envía el archivo raw al servidor /api/upload-detallado que lo guarda en Supabase
   function handleUpload(input) {
     const file = input.files[0]; if (!file) return;
-    toast('⏳ Leyendo archivo principal…','info');
-    readFile(file, (err, rows) => {
-      if (err) { toast('❌ Error: '+err.message,'error'); return; }
-      state.rows = rows;
-      state.meta = CALCS.extractMeta(rows);
-      state.fileNames.detallado = file.name;
-      saveToServer('DATOS', rows, file.name);
-      updateStatusBar();
-      toast(`✅ ${fmtN(rows.length)} registros cargados desde ${file.name}`,'success');
-      navigate('dashboard');
-    });
+    const lbl = document.getElementById('lbl-upload-topbar');
+    const span = lbl ? lbl.querySelector('span') : null;
+    if (span) span.textContent = '⏳ Subiendo…';
+    toast('⏳ Subiendo al servidor…','info');
+
+    const fd = new FormData();
+    fd.append('file', file);
+
+    fetch('/api/upload-detallado', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(async data => {
+        if (span) span.innerHTML = '📤 Subir Detallado';
+        if (!data.ok) { toast('❌ ' + data.error, 'error'); return; }
+
+        // Actualizar estado local con los datos parseados por el servidor
+        state.fileNames.detallado = data.fileName || file.name;
+        state.tipoReporte = 1;
+        state.source = 'manual-upload';
+        if (data.uploadedAt) state.uploadedAt.detallado = data.uploadedAt;
+
+        // Recargar desde servidor para tener los datos completos
+        toast('☁️ Guardado. Cargando datos…','info');
+        try {
+          const d = await fetch('/api/data/DATOS').then(r=>r.json());
+          if (d && d.rows && d.rows.length) {
+            state.rows = d.rows;
+            state.meta = CALCS.extractMeta(d.rows);
+          }
+        } catch(e) {}
+
+        updateStatusBar();
+        toast(`✅ ${fmtN(data.rows)} registros Detallado guardados en la nube ☁️`, 'success');
+        navigate('dashboard');
+      })
+      .catch(e => {
+        if (span) span.innerHTML = '📤 Subir Detallado';
+        toast('❌ Error al subir: ' + e.message, 'error');
+      });
   }
 
   // Upload por fuente específica (desde tab Datos)
@@ -260,7 +290,11 @@ const APP = (() => {
       if (sourceKey === 'detallado') {
         state.meta = CALCS.extractMeta(rows);
       }
-      saveToServer(sourceKey.toUpperCase(), rows, file.name);
+      // Para detallado: marcar como manual tipo=1 para proteger vs auto-sync
+      const meta = sourceKey === 'detallado'
+        ? { source: 'manual-upload', tipoReporte: 1 }
+        : {};
+      saveToServer(sourceKey.toUpperCase(), rows, file.name, meta);
       updateStatusBar();
       toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros`,'success');
       if (sourceKey === 'detallado') navigate('dashboard'); else datos();
@@ -271,24 +305,25 @@ const APP = (() => {
   const LS_PREFIX = 'ir_';
   const LS_MAX_MB = 4; // máximo ~4MB por fuente en localStorage
 
-  function saveToServer(table, rows, fileName) {
+  // meta: objeto opcional { source, tipoReporte } para identificar origen
+  function saveToServer(table, rows, fileName, meta = {}) {
     // 1. Intentar localStorage (para fuentes pequeñas)
     try {
-      const payload = JSON.stringify({rows, fileName});
+      const payload = JSON.stringify({rows, fileName, ...meta});
       if (payload.length < LS_MAX_MB * 1024 * 1024) {
         localStorage.setItem(LS_PREFIX + table, payload);
       }
     } catch(e) {}
-    // 2. Supabase Storage (nube — persiste en Vercel)
+    // 2. Supabase Storage (nube — persiste en Vercel, incluye meta)
     if (window.SUPA_DB) {
-      window.SUPA_DB.supaUpload(table, rows, fileName)
+      window.SUPA_DB.supaUpload(table, rows, fileName, meta)
         .then(ok => { if (ok) toast(`☁️ ${table} guardado en la nube`,'success'); })
         .catch(()=>{});
     }
     // 3. Servidor local (solo en localhost)
     fetch('/api/data/'+table, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({rows, fileName})
+      body: JSON.stringify({rows, fileName, ...meta})
     }).catch(()=>{});
   }
 
@@ -346,7 +381,12 @@ const APP = (() => {
         state[stateKey] = d.rows;
         state.fileNames[key] = d.fileName||table;
         if (d.uploadedAt) state.uploadedAt[key] = d.uploadedAt;
-        if (key === 'detallado') state.meta = CALCS.extractMeta(d.rows);
+        if (key === 'detallado') {
+          state.meta = CALCS.extractMeta(d.rows);
+          // Guardar metadatos de origen para mostrar advertencia si es tipo=3
+          if (d.tipoReporte != null) state.tipoReporte = d.tipoReporte;
+          if (d.source != null) state.source = d.source;
+        }
       }
     }
     if (supaOk && state.rows.length) toast('☁️ Datos restaurados desde la nube','success');
@@ -383,13 +423,15 @@ const APP = (() => {
     const el = document.getElementById('tab-dashboard');
     if (!state.rows.length) {
       el.innerHTML = `<div class="no-data">
-        <div class="nd-icon">📂</div>
-        <p>No hay datos. Haz clic en <b>🔄 Descargar desde Google Sheets</b> para cargar automáticamente.</p>
-        <button onclick="APP.driveSync(true)"
-          style="margin-top:16px;padding:12px 28px;background:#0f9d58;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
-          🔄 Descargar desde Google Sheets
-        </button>
-        <div id="drive-log-box-dash" style="display:none;margin-top:16px;background:#1e1e1e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto;text-align:left;max-width:600px">
+        <div class="nd-icon">🏥</div>
+        <p>No hay datos cargados.<br>Descarga el Excel <b>Detallado Auditoria Hospitalaria</b> del sistema y súbelo aquí.</p>
+        <label style="cursor:pointer;display:inline-block;margin-top:16px">
+          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+          <span style="display:inline-flex;align-items:center;gap:8px;padding:14px 32px;background:#e67e22;color:#fff;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;border:2px solid #d35400">
+            📤 Subir Detallado Auditoria Hospitalaria
+          </span>
+        </label>
+        <div id="drive-log-box-dash" style="display:none">
           <div id="drive-log-content-dash"></div>
         </div>
       </div>`;
@@ -418,19 +460,27 @@ const APP = (() => {
 
     el.innerHTML = `
       ${filterBar()}
-      <!-- Botón de sincronización Google Sheets prominente -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:12px 16px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border-radius:10px;border:1.5px solid #a5d6a7;flex-wrap:wrap">
-        <span style="font-size:18px">📊</span>
+      <!-- Banner estado Detallado -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:12px 16px;border-radius:10px;flex-wrap:wrap;${state.tipoReporte===1?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
+        <span style="font-size:20px">${state.tipoReporte===1?'✅':'⚠️'}</span>
         <div style="flex:1;min-width:200px">
-          <div style="font-weight:700;font-size:13px;color:#2e7d32">Google Sheets — Sincronización Automática</div>
-          <div style="font-size:11px;color:#555;margin-top:1px">El Apps Script actualiza el Sheet cada día a las 7 AM · <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2" target="_blank" style="color:#0f9d58">Ver archivo fuente</a>
-            ${state.uploadedAt.detallado ? ` · <span style="color:#2e7d32;font-weight:600">📅 Última descarga: ${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>` : ''}
+          <div style="font-weight:700;font-size:13px;color:${state.tipoReporte===1?'#2e7d32':'#e65100'}">
+            ${state.tipoReporte===1
+              ? `Detallado Auditoria Hospitalaria — ${fmtN(state.rows.length)} registros`
+              : `Datos incompletos — ${fmtN(state.rows.length)} registros (no es el Detallado completo)`}
+          </div>
+          <div style="font-size:11px;color:#555;margin-top:2px">
+            ${state.uploadedAt.detallado
+              ? `📅 Última subida: <b>${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b>`
+              : state.tipoReporte!==1 ? 'Sube el Excel <b>Detallado Auditoria Hospitalaria</b> descargado del sistema.' : ''}
           </div>
         </div>
-        <button id="btn-dash-sync" onclick="APP.driveSync(true)"
-          style="padding:9px 20px;background:#0f9d58;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
-          🔄 Descargar datos nuevos
-        </button>
+        <label style="cursor:pointer" title="Subir Excel DETALLADO_AUDITORIA_HOSPITALARIA del sistema hospitalario">
+          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;white-space:nowrap">
+            📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
+          </span>
+        </label>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
         ${periodoInfo ? `<div style="padding:7px 14px;background:#e8f5e9;border-radius:8px;font-size:12px;color:#2e7d32;border:1px solid #a5d6a7">${periodoInfo}</div>` : ''}
@@ -1330,34 +1380,30 @@ const APP = (() => {
     }
 
     el.innerHTML = `
-      <!-- ── Panel Google Sheets ──────────────────────────── -->
-      <div id="drive-panel" class="upload-section" style="border:2px solid #0f9d58;background:linear-gradient(135deg,#f0fff4,#fff)">
-        <h3 style="color:#0f9d58">🔄 Sincronización Automática — Google Sheets</h3>
+      <!-- ── Panel Detallado Hospitalario ─────────────────── -->
+      <div id="drive-panel" class="upload-section" style="border:2px solid #e67e22;background:linear-gradient(135deg,#fff8f0,#fff)">
+        <h3 style="color:#d35400">🏥 Detallado Auditoria Hospitalaria</h3>
         <p style="font-size:13px;color:#555;margin-bottom:14px">
-          Conectado a: <a href="https://docs.google.com/spreadsheets/d/1BvYBlquNuIbRyvDE-Ej5KbHv9zyVCaa2/edit" target="_blank" style="color:#0f9d58;font-weight:600">📊 DETALLADO_AUDITORIA_HOSPITALARIA</a>
-          · Sincroniza <b>automáticamente cada día a las 6:00 AM</b>. No requiere ninguna contraseña ni configuración.
+          Descarga el reporte <b>DETALLADO_AUDITORIA_HOSPITALARIA</b> del sistema hospitalario
+          (<a href="http://asdempleados.dusakawiepsi.com:8080/sie_dusakawi/pages/audit/auditoria_hospitalaria/auditoria_hospitalaria.xhtml" target="_blank" style="color:#e67e22;font-weight:600">abrir sistema ↗</a>)
+          y súbelo aquí. Los datos quedan guardados en la nube automáticamente.
         </p>
-        <div id="drive-status-box" style="padding:12px 16px;border-radius:8px;background:#fff;border:1px solid #b2dfdb;font-size:12px;margin-bottom:14px;color:#555">
-          <span id="drive-status-text">⏳ Verificando estado...</span>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="APP.driveSync(false)"
-            style="background:#0f9d58;border-color:#0f9d58" id="btn-drive-sync">
-            🔄 Sincronizar ahora
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="APP.driveSync(true)" id="btn-drive-force">
-            ⚡ Forzar re-descarga
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="APP.driveCheckStatus()">
-            📋 Ver estado
-          </button>
-        </div>
-        <div style="margin-top:12px;padding:10px 14px;background:#e8f5e9;border-radius:8px;font-size:11px;color:#388e3c">
-          ✅ <b>Sin configuración requerida.</b> El archivo se descarga directamente desde Google Sheets. Solo asegúrate de que el archivo esté compartido como <b>"Cualquiera con el enlace puede ver"</b>.
-        </div>
-        <div id="drive-log-box" style="display:none;margin-top:12px;background:#1e1e1e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto">
-          <div id="drive-log-content"></div>
-        </div>
+        ${state.rows.length ? `
+        <div style="padding:12px 16px;border-radius:8px;background:${state.tipoReporte===1?'#e8f5e9':'#fff3e0'};border:1px solid ${state.tipoReporte===1?'#a5d6a7':'#ff9800'};font-size:12px;margin-bottom:14px;color:#333">
+          ${state.tipoReporte===1
+            ? `✅ <b>Detallado cargado</b> — ${fmtN(state.rows.length)} registros${state.uploadedAt.detallado?' · '+new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}`
+            : `⚠️ Actualmente hay <b>${fmtN(state.rows.length)} registros</b> pero NO son el Detallado completo. Sube el archivo correcto.`}
+        </div>` : `
+        <div style="padding:12px 16px;border-radius:8px;background:#fff3e0;border:1px solid #ff9800;font-size:12px;margin-bottom:14px;color:#555">
+          ⚠️ No hay datos cargados. Sube el Excel para activar el dashboard.
+        </div>`}
+        <label style="cursor:pointer;display:inline-block">
+          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+          <span style="display:inline-flex;align-items:center;gap:8px;padding:11px 24px;background:#e67e22;color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid #d35400">
+            📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado Auditoria Hospitalaria'}
+          </span>
+        </label>
+        <div id="drive-log-box" style="display:none"><div id="drive-log-content"></div></div>
       </div>
 
       <div class="upload-section">

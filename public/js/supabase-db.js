@@ -52,12 +52,18 @@ function getClient() {
 }
 
 // Subir fuente a Supabase Storage (guarda solo columnas esenciales)
-async function supaUpload(table, rows, fileName) {
+// meta: objeto opcional con { source, tipoReporte, ... } para etiquetar el origen
+async function supaUpload(table, rows, fileName, meta = {}) {
   const client = getClient();
   if (!client) return false;
   try {
     const rowsFiltrados = filtrarColumnas(table, rows);
-    const payload = JSON.stringify({ rows: rowsFiltrados, fileName });
+    const payload = JSON.stringify({
+      rows: rowsFiltrados,
+      fileName,
+      uploadedAt: new Date().toISOString(),
+      ...meta,
+    });
     const mb = payload.length / 1024 / 1024;
     if (mb > MAX_JSON_MB) {
       console.warn(`[Supabase] ${table} demasiado grande (${mb.toFixed(1)} MB)`);

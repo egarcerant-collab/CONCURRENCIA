@@ -3,6 +3,7 @@ const path    = require('path');
 const fs      = require('fs');
 const https   = require('https');
 const XLSX    = require('xlsx');
+const multer  = require('multer');
 const { syncDrive, getLastSyncInfo: getDriveSyncInfo, credentialsExist } = require('./drive-sync');
 const { syncHospital, getLastSyncInfo: getHospitalSyncInfo } = require('./hospital-sync');
 
@@ -208,6 +209,87 @@ app.post('/api/upload-from-script', express.raw({ type: '*/*', limit: '20mb' }),
     res.json({ ok: true, rows: rows.length, sheet: sheetName, supabase: supaOk, supaError, uploadedAt: payload.uploadedAt });
   } catch(e) {
     console.error('[upload-from-script]', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Subida manual de Excel Detallado desde el navegador ──────
+// Acepta multipart/form-data con campo "file" → XLSX
+// Guarda con source='manual-upload', tipoReporte=1 → el auto-sync no sobreescribe
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
+
+app.post('/api/upload-detallado', upload.single('file'), async (req, res) => {
+  try {
+    const buffer = req.file ? req.file.buffer : req.body;
+    if (!buffer || buffer.length < 1000) {
+      return res.status(400).json({ ok: false, error: `Archivo insuficiente: ${buffer?.length || 0} bytes` });
+    }
+    if (buffer[0] !== 0x50 || buffer[1] !== 0x4B) {
+      return res.status(400).json({ ok: false, error: 'No es un archivo XLSX válido (cabecera incorrecta)' });
+    }
+
+    // Parsear XLSX
+    const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+    let sheetName = wb.SheetNames[0];
+    if (wb.SheetNames.includes('DATOS'))   sheetName = 'DATOS';
+    if (wb.SheetNames.includes('POWEBI'))  sheetName = 'POWEBI';
+    const ws = wb.Sheets[sheetName];
+    let rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!rows.length) return res.status(400).json({ ok: false, error: 'El archivo no tiene filas de datos' });
+
+    // Normalizar columnas (soporta tildes/acentos)
+    function normCol(s) { return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+    const reales = Object.keys(rows[0]);
+    const normMap = {};
+    reales.forEach(r => { normMap[normCol(r)] = r; });
+    const usar = COLS_DATOS.filter(c => rows[0][c] !== undefined || normMap[normCol(c)] !== undefined);
+    if (usar.length > 0) {
+      rows = rows.map(r => {
+        const o = {};
+        usar.forEach(c => { o[c] = r[c] ?? r[normMap[normCol(c)]] ?? ''; });
+        return o;
+      });
+    }
+
+    const uploadedAt = new Date().toISOString();
+    const fileName   = req.file ? req.file.originalname : 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx';
+    const payload = {
+      rows,
+      fileName,
+      uploadedAt,
+      source:      'manual-upload',   // ← marca que NO debe ser sobreescrito por auto-sync
+      tipoReporte: 1,                  // ← Detallado Auditoria Hospitalaria
+    };
+    const payloadStr = JSON.stringify(payload);
+
+    // Guardar en /tmp
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, 'DATOS.json'), payloadStr);
+    console.log(`[upload-detallado] ${rows.length} filas guardadas localmente`);
+
+    // Subir a Supabase
+    let supaOk = false, supaError = null;
+    try {
+      await uploadToSupabase(payloadStr);
+      supaOk = true;
+      console.log(`[upload-detallado] Supabase OK — ${rows.length} filas (tipo=1 manual)`);
+    } catch(e) {
+      supaError = e.message;
+      console.error('[upload-detallado] Supabase error:', e.message);
+    }
+
+    res.json({
+      ok: true,
+      rows: rows.length,
+      sheet: sheetName,
+      fileName,
+      uploadedAt,
+      supabase: supaOk,
+      supaError,
+      message: `✅ ${rows.length.toLocaleString('es-CO')} registros Detallado guardados correctamente`,
+    });
+  } catch(e) {
+    console.error('[upload-detallado]', e);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
