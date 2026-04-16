@@ -286,31 +286,19 @@ const APP = (() => {
       toast(`⏳ ${fmtN(rows.length)} registros leídos. Guardando en Supabase…`,'info');
       setSpan('⏳ Guardando…');
 
-      // 2. Filtrar a columnas esenciales (reduce de ~5MB a ~1.5MB)
-      const rowsFilt = filtrarEsenciales(rows);
+      // 2. Guardar directo en Supabase desde el browser (sin pasar por Vercel)
+      //    supaUploadDirect usa fetch → Supabase directamente, sin límite de 4.5MB
+      let supaOk = false;
+      if (window.SUPA_DB) {
+        supaOk = await window.SUPA_DB.supaUpload('DATOS', rows, file.name,
+          { source: 'manual-upload', tipoReporte: 1 });
+      }
 
-      // 3. Enviar al servidor → servidor guarda en Supabase
-      try {
-        const res = await fetch('/api/save-detallado', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rows: rowsFilt,
-            fileName: file.name,
-            tipoReporte: 1,
-            source: 'manual-upload',
-          }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          if (data.uploadedAt) state.uploadedAt.detallado = data.uploadedAt;
-          render();
-          toast(`✅ ${fmtN(data.rows)} registros guardados en Supabase ☁️`,'success');
-        } else {
-          toast('⚠️ Cargado en pantalla pero no se pudo guardar en la nube: '+data.error,'error');
-        }
-      } catch(e) {
-        toast('⚠️ Cargado en pantalla. Error al guardar en la nube: '+e.message,'error');
+      if (supaOk) {
+        render();
+        toast(`✅ ${fmtN(rows.length)} registros guardados en Supabase ☁️`,'success');
+      } else {
+        toast(`⚠️ ${fmtN(rows.length)} registros cargados en pantalla. Fallo al guardar en la nube — revisa la consola.`,'error');
       }
       setSpan('📤 Subir Detallado');
     });
@@ -1820,18 +1808,13 @@ const APP = (() => {
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
       toast('⏳ Guardando en Supabase...', 'info');
       try {
-        // Filtrar a columnas esenciales para reducir payload
-        const rowsFilt = filtrarEsenciales(state.rows);
-        const r = await fetch('/api/save-detallado', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rows: rowsFilt,
-            fileName: state.fileNames.detallado || 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
-            tipoReporte: state.tipoReporte || 1,
-            source: state.source || 'manual-upload',
-          }),
-        }).then(x => x.json());
+        // Guardar directo en Supabase desde el browser (sin límite Vercel)
+        const supaOkDirect = await window.SUPA_DB.supaUpload('DATOS', state.rows,
+          state.fileNames.detallado || 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
+          { tipoReporte: state.tipoReporte || 1, source: state.source || 'manual-upload' });
+        const r = { ok: supaOkDirect, rows: state.rows.length,
+          uploadedAt: new Date().toISOString(),
+          error: supaOkDirect ? null : 'Error al subir a Supabase — ver consola' };
         if (!r.ok) {
           toast('❌ Error al guardar: ' + r.error, 'error');
           if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar en Supabase'; }

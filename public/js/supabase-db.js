@@ -1,11 +1,9 @@
 // ── Supabase Storage — Persistencia en la nube ──────────────
-// Proyecto: concurencia-dsk
 const SUPA_URL = 'https://sstuwlwukjokhjbtelig.supabase.co';
 const SUPA_KEY = 'sb_publishable_kF5Vvgn0HYk7vo-JpPLFjA_BdfmobDK';
 const BUCKET   = 'indicadores';
 const MAX_JSON_MB = 20;
 
-// Columnas esenciales por fuente (reduce tamaño hasta 60%)
 const COLS_ESENCIALES = {
   DATOS: [
     'IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
@@ -26,11 +24,9 @@ function normCol(s) {
 function filtrarColumnas(table, rows) {
   const cols = COLS_ESENCIALES[table];
   if (!cols || !rows.length) return rows;
-  // Mapear columnas normalizadas → nombre real en el dato
   const reales = Object.keys(rows[0]);
   const normMap = {};
   reales.forEach(k => { normMap[normCol(k)] = k; });
-  // Para cada columna deseada, buscar su nombre real (con o sin tilde)
   const usar = [];
   cols.forEach(c => {
     const real = rows[0][c] !== undefined ? c : normMap[normCol(c)];
@@ -38,24 +34,14 @@ function filtrarColumnas(table, rows) {
   });
   return rows.map(r => {
     const o = {};
-    usar.forEach(([alias, real]) => { o[real] = r[real]; });
+    usar.forEach(([alias, real]) => { o[alias] = r[real] ?? r[real] ?? ''; });
     return o;
   });
 }
 
-let _client = null;
-function getClient() {
-  if (!_client && window.supabase) {
-    _client = window.supabase.createClient(SUPA_URL, SUPA_KEY);
-  }
-  return _client;
-}
-
-// Subir fuente a Supabase Storage (guarda solo columnas esenciales)
-// meta: objeto opcional con { source, tipoReporte, ... } para etiquetar el origen
-async function supaUpload(table, rows, fileName, meta = {}) {
-  const client = getClient();
-  if (!client) return false;
+// ── Subida DIRECTA a Supabase Storage vía fetch ──────────────
+// Igual al método del servidor — NO pasa por Vercel, sin límite de 4.5MB
+async function supaUploadDirect(table, rows, fileName, meta = {}) {
   try {
     const rowsFiltrados = filtrarColumnas(table, rows);
     const payload = JSON.stringify({
@@ -65,45 +51,97 @@ async function supaUpload(table, rows, fileName, meta = {}) {
       ...meta,
     });
     const mb = payload.length / 1024 / 1024;
-    if (mb > MAX_JSON_MB) {
-      console.warn(`[Supabase] ${table} demasiado grande (${mb.toFixed(1)} MB)`);
+    console.log(`[Supabase Direct] ${table}: ${rows.length} filas, ${mb.toFixed(2)} MB`);
+
+    const res = await fetch(
+      `${SUPA_URL}/storage/v1/object/${BUCKET}/${table}.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPA_KEY}`,
+          'apikey':        SUPA_KEY,
+          'Content-Type':  'application/json',
+          'x-upsert':      'true',
+        },
+        body: payload,
+      }
+    );
+    if (!res.ok) {
+      const txt = await res.text();
+      console.warn(`[Supabase Direct] Error ${res.status}: ${txt.slice(0,200)}`);
       return false;
     }
-    console.log(`[Supabase] ${table}: ${rows.length} filas, ${mb.toFixed(2)} MB → subiendo...`);
+    console.log(`[Supabase Direct] ✅ ${table} guardado (${mb.toFixed(2)} MB)`);
+    return true;
+  } catch(e) {
+    console.warn('[Supabase Direct] Exception:', e.message);
+    return false;
+  }
+}
+
+// ── Subida vía SDK (fallback) ─────────────────────────────────
+let _client = null;
+function getClient() {
+  if (!_client && window.supabase) {
+    _client = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  }
+  return _client;
+}
+
+async function supaUpload(table, rows, fileName, meta = {}) {
+  // Intentar primero con fetch directo (más confiable)
+  const ok = await supaUploadDirect(table, rows, fileName, meta);
+  if (ok) return true;
+  // Fallback: SDK de Supabase
+  const client = getClient();
+  if (!client) return false;
+  try {
+    const rowsFiltrados = filtrarColumnas(table, rows);
+    const payload = JSON.stringify({ rows: rowsFiltrados, fileName,
+      uploadedAt: new Date().toISOString(), ...meta });
+    const mb = payload.length / 1024 / 1024;
+    if (mb > MAX_JSON_MB) return false;
     const blob = new Blob([payload], { type: 'application/json' });
     const { error } = await client.storage
       .from(BUCKET)
       .upload(`${table}.json`, blob, { upsert: true, contentType: 'application/json' });
-    if (error) { console.warn('[Supabase] upload error:', error.message); return false; }
-    console.log(`[Supabase] ✅ ${table} guardado (${(payload.length/1024).toFixed(0)} KB)`);
+    if (error) { console.warn('[Supabase SDK] error:', error.message); return false; }
     return true;
-  } catch(e) { console.warn('[Supabase] upload exception:', e); return false; }
+  } catch(e) { console.warn('[Supabase SDK] exception:', e); return false; }
 }
 
-// Descargar fuente desde Supabase Storage
+// ── Descargar desde Supabase Storage ─────────────────────────
 async function supaDownload(table) {
+  // Intentar con fetch directo primero
+  try {
+    const res = await fetch(
+      `${SUPA_URL}/storage/v1/object/${BUCKET}/${table}.json`,
+      { headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } }
+    );
+    if (res.ok) {
+      const parsed = await res.json();
+      console.log(`[Supabase Direct] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
+      return parsed;
+    }
+  } catch(e) {}
+  // Fallback: SDK
   const client = getClient();
   if (!client) return null;
   try {
-    const { data, error } = await client.storage
-      .from(BUCKET)
-      .download(`${table}.json`);
+    const { data, error } = await client.storage.from(BUCKET).download(`${table}.json`);
     if (error || !data) return null;
-    const text = await data.text();
-    const parsed = JSON.parse(text);
-    console.log(`[Supabase] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
+    const parsed = JSON.parse(await data.text());
+    console.log(`[Supabase SDK] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
     return parsed;
   } catch(e) { return null; }
 }
 
-// Verificar si Supabase está disponible
 async function supaCheck() {
-  const client = getClient();
-  if (!client) return false;
   try {
-    const { error } = await client.storage.from(BUCKET).list('', { limit: 1 });
-    return !error;
+    const res = await fetch(`${SUPA_URL}/storage/v1/bucket/${BUCKET}`,
+      { headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } });
+    return res.ok;
   } catch(e) { return false; }
 }
 
-window.SUPA_DB = { supaUpload, supaDownload, supaCheck };
+window.SUPA_DB = { supaUpload, supaUploadDirect, supaDownload, supaCheck };
