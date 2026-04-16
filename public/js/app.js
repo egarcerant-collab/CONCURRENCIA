@@ -233,48 +233,54 @@ const APP = (() => {
     if (ext==='csv') reader.readAsText(file,'UTF-8'); else reader.readAsArrayBuffer(file);
   }
 
-  // Upload principal (DETALLADO) — desde el topbar
-  // Envía el archivo raw al servidor /api/upload-detallado que lo guarda en Supabase
+  // Upload principal (DETALLADO) — lee en el browser, guarda en Supabase directo
   function handleUpload(input) {
     const file = input.files[0]; if (!file) return;
     const lbl = document.getElementById('lbl-upload-topbar');
     const span = lbl ? lbl.querySelector('span') : null;
-    if (span) span.textContent = '⏳ Subiendo…';
-    toast('⏳ Subiendo al servidor…','info');
+    const setSpan = t => { if (span) span.textContent = t; };
+    setSpan('⏳ Leyendo…');
+    toast('⏳ Leyendo archivo…','info');
 
-    const fd = new FormData();
-    fd.append('file', file);
+    readFile(file, async (err, rows) => {
+      if (err) { toast('❌ '+err.message,'error'); setSpan('📤 Subir Detallado'); return; }
 
-    fetch('/api/upload-detallado', { method: 'POST', body: fd })
-      .then(r => r.json())
-      .then(async data => {
-        if (span) span.innerHTML = '📤 Subir Detallado';
-        if (!data.ok) { toast('❌ ' + data.error, 'error'); return; }
+      // 1. Cargar en pantalla inmediatamente
+      state.rows = rows;
+      state.meta = CALCS.extractMeta(rows);
+      state.fileNames.detallado = file.name;
+      state.tipoReporte = 1;
+      state.source = 'manual-upload';
+      state.uploadedAt.detallado = new Date().toISOString();
+      updateStatusBar();
+      navigate('dashboard');
+      toast(`✅ ${fmtN(rows.length)} registros cargados. Guardando en la nube…`,'info');
+      setSpan('⏳ Guardando…');
 
-        // Actualizar estado local con los datos parseados por el servidor
-        state.fileNames.detallado = data.fileName || file.name;
-        state.tipoReporte = 1;
-        state.source = 'manual-upload';
-        if (data.uploadedAt) state.uploadedAt.detallado = data.uploadedAt;
-
-        // Recargar desde servidor para tener los datos completos
-        toast('☁️ Guardado. Cargando datos…','info');
+      // 2. Guardar en Supabase directamente desde el browser
+      let supaOk = false;
+      if (window.SUPA_DB) {
         try {
-          const d = await fetch('/api/data/DATOS').then(r=>r.json());
-          if (d && d.rows && d.rows.length) {
-            state.rows = d.rows;
-            state.meta = CALCS.extractMeta(d.rows);
-          }
+          supaOk = await window.SUPA_DB.supaUpload('DATOS', rows, file.name,
+            { source:'manual-upload', tipoReporte:1 });
         } catch(e) {}
+      }
 
-        updateStatusBar();
-        toast(`✅ ${fmtN(data.rows)} registros Detallado guardados en la nube ☁️`, 'success');
-        navigate('dashboard');
-      })
-      .catch(e => {
-        if (span) span.innerHTML = '📤 Subir Detallado';
-        toast('❌ Error al subir: ' + e.message, 'error');
-      });
+      // 3. Guardar también en el servidor como respaldo (solo metadata ligera)
+      fetch('/api/data/DATOS', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ rows:[], fileName:file.name,
+          tipoReporte:1, source:'manual-upload',
+          uploadedAt: state.uploadedAt.detallado, rowCount: rows.length })
+      }).catch(()=>{});
+
+      if (supaOk) {
+        toast(`☁️ ${fmtN(rows.length)} registros guardados en Supabase`,'success');
+      } else {
+        toast(`✅ ${fmtN(rows.length)} registros cargados. Clic en 💾 Guardar en Supabase para persistir.`,'info');
+      }
+      setSpan('📤 Subir Detallado');
+    });
   }
 
   // Upload por fuente específica (desde tab Datos)
@@ -1781,11 +1787,21 @@ const APP = (() => {
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
       toast('⏳ Guardando en Supabase...', 'info');
       try {
+        // Filtrar solo columnas esenciales para reducir tamaño del payload
+        const colsMin = ['IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
+          'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado',
+          'Estado del Egreso','Servicio','Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
+          'Estancia','Programa Riesgo','Gestacion','Via Parto','Reingreso','Auditor',
+          'Glosas','Valor Total Glosa','Eventos Adversos','Observación Seguimiento',
+          'Patologia alto costo','Especialidad','IPS Primaria'];
+        const rowsFilt = state.rows.map(r => {
+          const o = {}; colsMin.forEach(c => { if (r[c]!==undefined) o[c]=r[c]; }); return o;
+        });
         const r = await fetch('/api/save-detallado', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            rows: state.rows,
+            rows: rowsFilt,
             fileName: state.fileNames.detallado || 'DETALLADO_AUDITORIA_HOSPITALARIA.xlsx',
             tipoReporte: state.tipoReporte || 1,
             source: state.source || 'manual-upload',
