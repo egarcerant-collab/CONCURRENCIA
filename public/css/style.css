@@ -25,7 +25,7 @@ body {
 /* ── SIDEBAR ── */
 #sidebar {
   width: var(--sidebar-w);
-  min-height: 100vh;
+  height: 100vh;
   background: var(--primary);
   color: #fff;
   display: flex;
@@ -34,6 +34,7 @@ body {
   left: 0; top: 0;
   z-index: 100;
   transition: width 0.2s;
+  overflow: hidden;
 }
 
 #sidebar .brand {
