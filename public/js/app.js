@@ -233,7 +233,36 @@ const APP = (() => {
     if (ext==='csv') reader.readAsText(file,'UTF-8'); else reader.readAsArrayBuffer(file);
   }
 
-  // Upload principal (DETALLADO) — lee en el browser, guarda en Supabase directo
+  // Columnas esenciales para el dashboard (reduce payload a ~1.5MB)
+  const COLS_ESENCIALES_DETALLADO = [
+    'IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
+    'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado',
+    'Estado del Egreso','Servicio','Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
+    'Estancia','Programa Riesgo','Gestacion','Via Parto','Dx Gestante',
+    'Control Prenatal','Reingreso','Auditor','Glosas','Valor Total Glosa',
+    'Eventos Adversos','Cantidad Evento no calidad','Observación Seguimiento',
+    'Patologia alto costo','Especialidad','IPS Primaria'
+  ];
+
+  function filtrarEsenciales(rows) {
+    if (!rows.length) return rows;
+    const reales = Object.keys(rows[0]);
+    const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+    const normMap = {}; reales.forEach(k => { normMap[norm(k)] = k; });
+    const usar = [];
+    COLS_ESENCIALES_DETALLADO.forEach(c => {
+      const real = rows[0][c] !== undefined ? c : normMap[norm(c)];
+      if (real !== undefined) usar.push([c, real]);
+    });
+    return rows.map(r => {
+      const o = {};
+      usar.forEach(([alias, real]) => { o[alias] = r[real] ?? ''; });
+      return o;
+    });
+  }
+
+  // Upload principal (DETALLADO)
+  // Flujo: browser lee XLSX → filtra cols → POST /api/save-detallado → Supabase
   function handleUpload(input) {
     const file = input.files[0]; if (!file) return;
     const lbl = document.getElementById('lbl-upload-topbar');
@@ -245,7 +274,7 @@ const APP = (() => {
     readFile(file, async (err, rows) => {
       if (err) { toast('❌ '+err.message,'error'); setSpan('📤 Subir Detallado'); return; }
 
-      // 1. Cargar en pantalla inmediatamente
+      // 1. Mostrar en pantalla inmediatamente
       state.rows = rows;
       state.meta = CALCS.extractMeta(rows);
       state.fileNames.detallado = file.name;
@@ -254,30 +283,34 @@ const APP = (() => {
       state.uploadedAt.detallado = new Date().toISOString();
       updateStatusBar();
       navigate('dashboard');
-      toast(`✅ ${fmtN(rows.length)} registros cargados. Guardando en la nube…`,'info');
+      toast(`⏳ ${fmtN(rows.length)} registros leídos. Guardando en Supabase…`,'info');
       setSpan('⏳ Guardando…');
 
-      // 2. Guardar en Supabase directamente desde el browser
-      let supaOk = false;
-      if (window.SUPA_DB) {
-        try {
-          supaOk = await window.SUPA_DB.supaUpload('DATOS', rows, file.name,
-            { source:'manual-upload', tipoReporte:1 });
-        } catch(e) {}
-      }
+      // 2. Filtrar a columnas esenciales (reduce de ~5MB a ~1.5MB)
+      const rowsFilt = filtrarEsenciales(rows);
 
-      // 3. Guardar también en el servidor como respaldo (solo metadata ligera)
-      fetch('/api/data/DATOS', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ rows:[], fileName:file.name,
-          tipoReporte:1, source:'manual-upload',
-          uploadedAt: state.uploadedAt.detallado, rowCount: rows.length })
-      }).catch(()=>{});
-
-      if (supaOk) {
-        toast(`☁️ ${fmtN(rows.length)} registros guardados en Supabase`,'success');
-      } else {
-        toast(`✅ ${fmtN(rows.length)} registros cargados. Clic en 💾 Guardar en Supabase para persistir.`,'info');
+      // 3. Enviar al servidor → servidor guarda en Supabase
+      try {
+        const res = await fetch('/api/save-detallado', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rows: rowsFilt,
+            fileName: file.name,
+            tipoReporte: 1,
+            source: 'manual-upload',
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (data.uploadedAt) state.uploadedAt.detallado = data.uploadedAt;
+          render();
+          toast(`✅ ${fmtN(data.rows)} registros guardados en Supabase ☁️`,'success');
+        } else {
+          toast('⚠️ Cargado en pantalla pero no se pudo guardar en la nube: '+data.error,'error');
+        }
+      } catch(e) {
+        toast('⚠️ Cargado en pantalla. Error al guardar en la nube: '+e.message,'error');
       }
       setSpan('📤 Subir Detallado');
     });
@@ -1787,16 +1820,8 @@ const APP = (() => {
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
       toast('⏳ Guardando en Supabase...', 'info');
       try {
-        // Filtrar solo columnas esenciales para reducir tamaño del payload
-        const colsMin = ['IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
-          'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado',
-          'Estado del Egreso','Servicio','Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
-          'Estancia','Programa Riesgo','Gestacion','Via Parto','Reingreso','Auditor',
-          'Glosas','Valor Total Glosa','Eventos Adversos','Observación Seguimiento',
-          'Patologia alto costo','Especialidad','IPS Primaria'];
-        const rowsFilt = state.rows.map(r => {
-          const o = {}; colsMin.forEach(c => { if (r[c]!==undefined) o[c]=r[c]; }); return o;
-        });
+        // Filtrar a columnas esenciales para reducir payload
+        const rowsFilt = filtrarEsenciales(state.rows);
         const r = await fetch('/api/save-detallado', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
