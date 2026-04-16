@@ -150,11 +150,16 @@ const CALCS = (() => {
     const municipios = [...new Set(rows.map(r =>
       get(r,'Municipio')||get(r,'MUNICIPIO')||get(r,'municipio')||''
     ).filter(Boolean))].sort();
-    // Fecha más reciente de atención en la base
+    // Fecha más reciente de atención en la base (solo años 2015-año actual)
+    const yearNow = new Date().getFullYear();
     let fechaMax = '';
     rows.forEach(r => {
       const f = String(get(r,'Fecha Ingreso')||get(r,'Fecha Egreso')||'');
-      if (f > fechaMax) fechaMax = f;
+      const m = f.match(/(\d{4})/);
+      if (m) {
+        const y = parseInt(m[1]);
+        if (y >= 2015 && y <= yearNow && f > fechaMax) fechaMax = f;
+      }
     });
     return { ips, anios, departamentos, municipios, fechaMax };
   }

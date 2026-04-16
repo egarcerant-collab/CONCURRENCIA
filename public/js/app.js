@@ -478,12 +478,18 @@ const APP = (() => {
               : state.tipoReporte!==1 ? 'Sube el Excel <b>Detallado Auditoria Hospitalaria</b> descargado del sistema.' : ''}
           </div>
         </div>
-        <label style="cursor:pointer" title="Subir Excel DETALLADO_AUDITORIA_HOSPITALARIA del sistema hospitalario">
-          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;white-space:nowrap">
-            📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
-          </span>
-        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label style="cursor:pointer" title="Subir Excel DETALLADO_AUDITORIA_HOSPITALARIA del sistema hospitalario">
+            <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;white-space:nowrap">
+              📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
+            </span>
+          </label>
+          <button onclick="APP.hospitalSync()"
+            style="padding:9px 18px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
+            ▶ Ejecutar descarga automática
+          </button>
+        </div>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
         ${periodoInfo ? `<div style="padding:7px 14px;background:#e8f5e9;border-radius:8px;font-size:12px;color:#2e7d32;border:1px solid #a5d6a7">${periodoInfo}</div>` : ''}
