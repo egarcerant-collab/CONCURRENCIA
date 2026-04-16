@@ -123,24 +123,41 @@ async function supaDownload(table) {
       console.log(`[Supabase Direct] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
       return parsed;
     }
-  } catch(e) {}
-  // Fallback: SDK
+    // Loguear el error para diagnóstico
+    const errTxt = await res.text().catch(()=>'');
+    console.warn(`[Supabase Direct] ${table} → HTTP ${res.status}: ${errTxt.slice(0,150)}`);
+  } catch(e) {
+    console.warn(`[Supabase Direct] ${table} → excepción:`, e.message);
+  }
+  // Fallback: SDK de Supabase
   const client = getClient();
-  if (!client) return null;
+  if (!client) {
+    console.warn('[Supabase SDK] SDK no disponible (window.supabase no cargado)');
+    return null;
+  }
   try {
     const { data, error } = await client.storage.from(BUCKET).download(`${table}.json`);
-    if (error || !data) return null;
+    if (error) { console.warn(`[Supabase SDK] ${table} → error:`, error.message); return null; }
+    if (!data)  { console.warn(`[Supabase SDK] ${table} → sin datos`); return null; }
     const parsed = JSON.parse(await data.text());
     console.log(`[Supabase SDK] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
     return parsed;
-  } catch(e) { return null; }
+  } catch(e) {
+    console.warn(`[Supabase SDK] ${table} → excepción:`, e.message);
+    return null;
+  }
 }
 
+// supaCheck: verifica si Supabase es accesible intentando descargar DATOS.json
+// (el endpoint de metadatos del bucket requiere admin; el object endpoint no)
 async function supaCheck() {
   try {
-    const res = await fetch(`${SUPA_URL}/storage/v1/bucket/${BUCKET}`,
-      { headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } });
-    return res.ok;
+    const res = await fetch(
+      `${SUPA_URL}/storage/v1/object/${BUCKET}/DATOS.json`,
+      { method: 'HEAD', headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } }
+    );
+    // 200 = existe, 404 = no existe pero Supabase accesible, 401/403 = sin permisos
+    return res.status !== 401 && res.status !== 403;
   } catch(e) { return false; }
 }
 

@@ -262,7 +262,7 @@ const APP = (() => {
   }
 
   // Upload principal (DETALLADO)
-  // Flujo: browser lee XLSX → filtra cols → POST /api/save-detallado → Supabase
+  // Flujo: browser lee XLSX → intenta subir directo a Supabase → fallback servidor
   function handleUpload(input) {
     const file = input.files[0]; if (!file) return;
     const lbl = document.getElementById('lbl-upload-topbar');
@@ -286,19 +286,48 @@ const APP = (() => {
       toast(`⏳ ${fmtN(rows.length)} registros leídos. Guardando en Supabase…`,'info');
       setSpan('⏳ Guardando…');
 
-      // 2. Guardar directo en Supabase desde el browser (sin pasar por Vercel)
-      //    supaUploadDirect usa fetch → Supabase directamente, sin límite de 4.5MB
+      // 2. Guardar en Supabase — intenta directo desde el browser primero
       let supaOk = false;
       if (window.SUPA_DB) {
         supaOk = await window.SUPA_DB.supaUpload('DATOS', rows, file.name,
           { source: 'manual-upload', tipoReporte: 1 });
       }
 
+      // 3. Si el upload directo falla, intentar via el servidor (fallback)
+      if (!supaOk) {
+        console.log('[upload] Supabase directo falló — intentando via servidor...');
+        try {
+          // Filtrar columnas esenciales para reducir el payload
+          const rowsFilt = filtrarEsenciales(rows);
+          const body = JSON.stringify({
+            rows: rowsFilt, fileName: file.name,
+            tipoReporte: 1, source: 'manual-upload'
+          });
+          const mbSize = body.length / 1024 / 1024;
+          console.log(`[upload-server] payload: ${mbSize.toFixed(2)} MB`);
+          if (mbSize <= 4.0) { // Margen de seguridad bajo el límite de Vercel (4.5MB)
+            const r = await fetch('/api/save-detallado', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body
+            }).then(x => x.json());
+            supaOk = r && r.ok;
+            if (supaOk) console.log('[upload-server] ✅ guardado via servidor');
+            else console.warn('[upload-server] ❌', r && r.error);
+          } else {
+            console.warn(`[upload-server] payload muy grande (${mbSize.toFixed(2)} MB > 4 MB), omitiendo ruta servidor`);
+          }
+        } catch(e) {
+          console.warn('[upload-server] excepción:', e.message);
+        }
+      }
+
       if (supaOk) {
         render();
         toast(`✅ ${fmtN(rows.length)} registros guardados en Supabase ☁️`,'success');
       } else {
-        toast(`⚠️ ${fmtN(rows.length)} registros cargados en pantalla. Fallo al guardar en la nube — revisa la consola.`,'error');
+        // Aunque no se guardó en Supabase, los datos están en pantalla
+        toast(`⚠️ ${fmtN(rows.length)} registros cargados. Error al guardar en la nube — presiona "💾 Guardar en Supabase" para reintentar.`,'error');
       }
       setSpan('📤 Subir Detallado');
     });
@@ -371,41 +400,45 @@ const APP = (() => {
     }
   }
 
-  // Cargar datos guardados: servidor local → localStorage → Supabase (nube)
+  // Cargar datos guardados: Supabase (prioridad) → localStorage → servidor local
   async function loadSaved() {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA'};
 
-    // Verificar servidor local
+    // Verificar servidor local (solo útil en localhost dev)
     let servidorOk = false;
     try {
-      await fetch('/api/tables', {signal: AbortSignal.timeout(1500)});
-      servidorOk = true;
+      const r = await fetch('/api/tables', {signal: AbortSignal.timeout(1000)});
+      servidorOk = r.ok;
     } catch(e) {}
 
-    // Verificar Supabase
-    let supaOk = false;
-    if (window.SUPA_DB) {
-      toast('☁️ Conectando con la nube...','info');
-      supaOk = await window.SUPA_DB.supaCheck().catch(()=>false);
-    }
+    // Intentar Supabase SIEMPRE — es la fuente principal en Vercel
+    // NO usamos supaCheck() porque requiere admin; supaDownload maneja errores solo
+    const hasSupa = !!window.SUPA_DB;
+    if (hasSupa) toast('☁️ Cargando datos desde la nube...','info');
+
+    let supaRestoredMain = false;
 
     for (const [key, table] of Object.entries(tables)) {
       let d = null;
-      // 1. Servidor local (localhost)
-      if (servidorOk) {
-        try { d = await fetch('/api/data/'+table).then(r=>r.json()); } catch(e) {}
+
+      // 1. SUPABASE — fuente principal (persiste en Vercel, accesible desde cualquier lugar)
+      if (hasSupa) {
+        try { d = await window.SUPA_DB.supaDownload(table); } catch(e) {}
       }
-      // 2. localStorage (pequeños archivos)
+
+      // 2. localStorage — fallback por-dispositivo (si Supabase falla o no tiene datos)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
           if (raw) d = JSON.parse(raw);
         } catch(e) {}
       }
-      // 3. Supabase Storage (nube — fuente principal en Vercel)
-      if ((!d || !d.rows || !d.rows.length) && supaOk) {
-        try { d = await window.SUPA_DB.supaDownload(table); } catch(e) {}
+
+      // 3. Servidor local — solo en localhost/dev
+      if ((!d || !d.rows || !d.rows.length) && servidorOk) {
+        try { d = await fetch('/api/data/'+table).then(r=>r.json()); } catch(e) {}
       }
+
       if (d && d.rows && d.rows.length) {
         const stateKey = key === 'detallado' ? 'rows' : key+'Rows';
         state[stateKey] = d.rows;
@@ -413,26 +446,23 @@ const APP = (() => {
         if (d.uploadedAt) state.uploadedAt[key] = d.uploadedAt;
         if (key === 'detallado') {
           state.meta = CALCS.extractMeta(d.rows);
-          // Guardar metadatos de origen para mostrar advertencia si es tipo=3
           if (d.tipoReporte != null) state.tipoReporte = d.tipoReporte;
           if (d.source != null) state.source = d.source;
+          supaRestoredMain = true;
         }
       }
     }
-    if (supaOk && state.rows.length) toast('☁️ Datos restaurados desde la nube','success');
 
     // Cargar mapa de auditores
     try {
       let a = null;
-      if (servidorOk) {
-        try { a = await fetch('/api/data/AUDITORES').then(r=>r.json()); } catch(e) {}
-      }
+      if (hasSupa) { try { a = await window.SUPA_DB.supaDownload('AUDITORES'); } catch(e) {} }
       if (!a || !a.rows) {
         const raw = localStorage.getItem(LS_PREFIX+'AUDITORES');
         if (raw) a = JSON.parse(raw);
       }
-      if ((!a || !a.rows) && supaOk) {
-        try { a = await window.SUPA_DB.supaDownload('AUDITORES'); } catch(e) {}
+      if ((!a || !a.rows) && servidorOk) {
+        try { a = await fetch('/api/data/AUDITORES').then(r=>r.json()); } catch(e) {}
       }
       if (a && a.rows && a.rows.length) {
         const map = {};
@@ -441,9 +471,12 @@ const APP = (() => {
         state.auditoresMap = map;
       }
     } catch(e) {}
+
     updateStatusBar();
     if (state.rows.length) {
-      toast(`📂 Datos restaurados: ${fmtN(state.rows.length)} registros`,'success');
+      toast(`✅ ${fmtN(state.rows.length)} registros restaurados desde la nube ☁️`,'success');
+    } else {
+      toast('📂 No hay datos en la nube. Sube el Excel Detallado.','info');
     }
   }
 
@@ -1448,6 +1481,12 @@ const APP = (() => {
         <div style="margin-top:10px;font-size:11px;color:#888">
           <b>Subir:</b> manual, tú eliges el archivo · <b>Ejecutar:</b> intenta descargar directo del sistema hospitalario y subir a Supabase
         </div>
+        <div style="margin-top:10px">
+          <button onclick="APP.recargarNube()" style="padding:8px 18px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
+            🔄 Recargar desde Supabase
+          </button>
+          <span style="font-size:11px;color:#888;margin-left:10px">Si ya subiste datos antes, esto los restaura desde la nube</span>
+        </div>
         <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:220px;overflow-y:auto">
           <div id="drive-log-content"></div>
         </div>
@@ -1510,8 +1549,33 @@ const APP = (() => {
   }
 
   return {
-    init: async () => { await loadSaved(); navigate(state.rows.length ? 'dashboard' : 'datos'); },
+    init: async () => {
+      // Mostrar pantalla de carga mientras se busca en Supabase
+      const tabDatos = document.getElementById('tab-datos');
+      if (tabDatos) tabDatos.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:20px">
+          <div style="font-size:48px;animation:spin 1.2s linear infinite">☁️</div>
+          <div style="font-size:18px;font-weight:700;color:#1a4f7a">Cargando datos desde la nube...</div>
+          <div style="font-size:13px;color:#888">Conectando con Supabase — esto solo toma unos segundos</div>
+        </div>
+        <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
+      await loadSaved();
+      navigate(state.rows.length ? 'dashboard' : 'datos');
+    },
     navigate, render,
+    // Recargar datos desde Supabase manualmente (para cuando el auto-load no funciona)
+    recargarNube: async () => {
+      toast('☁️ Recargando desde Supabase...','info');
+      const prevRows = state.rows.length;
+      await loadSaved();
+      if (state.rows.length > 0) {
+        navigate('dashboard');
+        toast(`✅ ${fmtN(state.rows.length)} registros restaurados desde la nube`,'success');
+      } else {
+        toast('⚠️ No se encontraron datos en Supabase. Sube el Excel primero.','error');
+        datos(); // refrescar tab datos
+      }
+    },
     setFilter: (k,v) => { state.filters[k]=v; render(); },
     setFilterDpto: (v) => { state.filters.departamento=v; state.filters.municipio='todos'; render(); },
     resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',departamento:'todos',municipio:'todos'}; render(); },
