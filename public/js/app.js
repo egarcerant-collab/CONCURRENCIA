@@ -1089,22 +1089,116 @@ const APP = (() => {
   function concurrencias() {
     const el = document.getElementById('tab-concurrencias');
     if (!state.rows.length) { el.innerHTML = noData(); return; }
+
     const d = CALCS.calcConcurrencias(state.rows, state.filters);
+
+    // Agrupar por Departamento → Municipio → IPS para mostrar "dónde están"
+    const porDept = {}, porMun = {};
+    d.rows.forEach(row => {
+      const dep = CALCS.get(row,'Departamento') || 'Sin Depto';
+      const mun = CALCS.get(row,'Municipio')    || 'Sin Municipio';
+      const ips = CALCS.get(row,'IPS')          || 'Sin IPS';
+      porDept[dep] = (porDept[dep]||0) + 1;
+      porMun[mun]  = (porMun[mun]||0)  + 1;
+    });
+
+    const topIps  = Object.entries(d.porIps).sort((a,b)=>b[1]-a[1]).slice(0,20);
+    const topDept = Object.entries(porDept).sort((a,b)=>b[1]-a[1]);
+    const topMun  = Object.entries(porMun).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+    // Tabla resumen por IPS
+    const tablaIps = `<div class="table-scroll"><table>
+      <thead><tr><th>#</th><th>IPS / Prestador</th><th>Casos Abiertos</th><th>% del total</th></tr></thead>
+      <tbody>${topIps.map(([ips,n],i)=>`<tr>
+        <td style="color:#888;font-size:11px">${i+1}</td>
+        <td><b>${ips}</b></td>
+        <td style="font-weight:700;color:#e67e22">${fmtN(n)}</td>
+        <td><div style="display:flex;align-items:center;gap:6px">
+          <div style="width:${Math.round(n/d.abiertos*120)}px;height:8px;background:#f39c12;border-radius:4px;max-width:120px"></div>
+          <span style="font-size:11px">${fmt(CALCS.divide(n,d.abiertos))}%</span>
+        </div></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+
     el.innerHTML = `${filterBar()}
-      <div class="kpi-grid">
-        ${kpi('Casos Abiertos',fmtN(d.abiertos),'',`${fmt(d.tasa)}% del total`,'orange','🔄','Fuente: campo Estado\nRegistros con Estado = "Abierto" — pacientes aún en seguimiento o sin egreso registrado.')}
-        ${kpi('Total Registros',fmtN(d.total),'','','blue','📊','Fuente: DETALLADO_AUDITORIA_HOSPITALARIA\nTotal de registros con los filtros aplicados.')}
+      <!-- KPIs principales -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:18px">
+        <div style="background:linear-gradient(135deg,#fff3e0,#fff);border:2px solid #f39c12;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#e65100;font-weight:600;text-transform:uppercase;letter-spacing:.5px">🔄 Casos Abiertos</div>
+          <div style="font-size:36px;font-weight:800;color:#e67e22;margin:6px 0">${fmtN(d.abiertos)}</div>
+          <div style="font-size:12px;color:#888">${fmt(d.tasa)}% del total · ${fmtN(d.total)} registros</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#e8f5e9,#fff);border:2px solid #27ae60;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#1b5e20;font-weight:600;text-transform:uppercase;letter-spacing:.5px">🏥 IPS con Casos</div>
+          <div style="font-size:36px;font-weight:800;color:#27ae60;margin:6px 0">${fmtN(Object.keys(d.porIps).length)}</div>
+          <div style="font-size:12px;color:#888">prestadores activos</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#e3f2fd,#fff);border:2px solid #1a4f7a;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#0d47a1;font-weight:600;text-transform:uppercase;letter-spacing:.5px">📍 Municipios</div>
+          <div style="font-size:36px;font-weight:800;color:#1a4f7a;margin:6px 0">${fmtN(Object.keys(porMun).length)}</div>
+          <div style="font-size:12px;color:#888">con casos abiertos</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#f3e5f5,#fff);border:2px solid #8e44ad;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:11px;color:#4a148c;font-weight:600;text-transform:uppercase;letter-spacing:.5px">🗺️ Departamentos</div>
+          <div style="font-size:36px;font-weight:800;color:#8e44ad;margin:6px 0">${fmtN(Object.keys(porDept).length)}</div>
+          <div style="font-size:12px;color:#888">con casos abiertos</div>
+        </div>
       </div>
-      <div class="chart-grid">
-        <div class="chart-card" style="grid-column:1/-1"><h4>Concurrencias Abiertas por IPS</h4><canvas id="ch-con-ips" height="240"></canvas></div>
+
+      <!-- Distribución geográfica -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
+        <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:12px">🗺️ Casos por Departamento</h4>
+          ${topDept.map(([dep,n])=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="flex:1;font-size:12px;font-weight:600;min-width:80px">${dep}</div>
+              <div style="flex:2;background:#f0f4f8;border-radius:4px;height:18px;position:relative">
+                <div style="width:${Math.min(n/topDept[0][1]*100,100)}%;height:100%;background:#8e44ad;border-radius:4px"></div>
+              </div>
+              <div style="font-size:12px;font-weight:700;color:#8e44ad;min-width:30px;text-align:right">${fmtN(n)}</div>
+            </div>`).join('')}
+        </div>
+        <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:12px">📍 Top Municipios</h4>
+          ${topMun.map(([mun,n])=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="flex:1;font-size:12px;font-weight:600;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mun}</div>
+              <div style="flex:2;background:#f0f4f8;border-radius:4px;height:18px;position:relative">
+                <div style="width:${Math.min(n/topMun[0][1]*100,100)}%;height:100%;background:#1a4f7a;border-radius:4px"></div>
+              </div>
+              <div style="font-size:12px;font-weight:700;color:#1a4f7a;min-width:30px;text-align:right">${fmtN(n)}</div>
+            </div>`).join('')}
+        </div>
       </div>
-      <div class="data-table-wrap"><h4>Listado Casos Abiertos</h4>
-        ${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico','Fecha Ingreso','Auditor','Observación Seguimiento'])}
+
+      <!-- Gráfica por IPS -->
+      <div class="chart-card" style="margin-bottom:18px">
+        <h4>🏥 Casos Abiertos por IPS (Top ${Math.min(topIps.length,20)})</h4>
+        <div style="position:relative;height:${Math.max(200,Math.min(topIps.length,20)*32)}px">
+          <canvas id="ch-con-ips"></canvas>
+        </div>
+      </div>
+
+      <!-- Tabla por IPS -->
+      <div class="data-table-wrap" style="margin-bottom:18px">
+        <h4>📊 Resumen por IPS / Prestador</h4>
+        ${tablaIps}
+      </div>
+
+      <!-- Listado de pacientes -->
+      <div class="data-table-wrap">
+        <h4>📋 Listado de Pacientes con Casos Abiertos (${fmtN(d.abiertos)} pacientes)</h4>
+        ${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico','Fecha Ingreso','Departamento','Municipio','Auditor','Observación Seguimiento'])}
       </div>`;
-    setTimeout(()=>{
-      const top = Object.entries(d.porIps).sort((a,b)=>b[1]-a[1]).slice(0,15);
-      CHARTS.barras('ch-con-ips',top.map(x=>x[0]),top.map(x=>x[1]),'Casos','#f39c12');
-    },50);
+
+    // Gráfica con timeout más largo para asegurar que el DOM esté listo
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const cvs = document.getElementById('ch-con-ips');
+        if (!cvs || !topIps.length) return;
+        CHARTS.barras('ch-con-ips', topIps.map(x=>x[0]), topIps.map(x=>x[1]), 'Casos Abiertos', '#f39c12');
+      });
+    });
   }
 
   function reingreso() {
