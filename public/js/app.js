@@ -824,16 +824,28 @@ const APP = (() => {
         <br>Servicios: Hosp. Adultos + Hosp. Pediátrica + Observación
       </div>
 
+      <!-- KPI total de registros analizados -->
+      <div style="padding:10px 16px;background:#e3f2fd;border-radius:8px;margin-bottom:16px;font-size:12px;color:#1a4f7a;border-left:4px solid #1a4f7a">
+        📊 <b>${fmtN(d.total)}</b> registros analizados — se buscan diagnósticos CIE-10 en el campo <b>Diagnostico</b>
+      </div>
       <div class="kpi-grid" style="margin-bottom:20px">
-        ${enfCard('Dengue (Total)','🦟','#f39c12','dengue')}
-        ${enfCard('Leishmaniasis','🦠','#16a085','leishmaniasis')}
-        ${enfCard('Chagas','🪲','#8b4513','chagas')}
-        ${enfCard('Malaria','🦟','#e74c3c','malaria')}
-        ${enfCard('Tuberculosis','🫁','#7f8c8d','tuberculosis')}
-        ${enfCard('VIH/SIDA','🔴','#8e44ad','vih')}
-        ${enfCard('Hematológicas','🩸','#c0392b','hematologicas')}
-        ${enfCard('Cáncer','🎗️','#922b21','cancer')}
-        ${enfCard('ERC','🫘','#2980b9','erc')}
+        ${[
+          enfCard('Dengue (Total)','🦟','#f39c12','dengue'),
+          enfCard('Leishmaniasis','🦠','#16a085','leishmaniasis'),
+          enfCard('Chagas','🪲','#8b4513','chagas'),
+          enfCard('Malaria','🦟','#e74c3c','malaria'),
+          enfCard('Tuberculosis','🫁','#7f8c8d','tuberculosis'),
+          enfCard('VIH/SIDA','🔴','#8e44ad','vih'),
+          enfCard('Hematológicas','🩸','#c0392b','hematologicas'),
+          enfCard('Cáncer','🎗️','#922b21','cancer'),
+          enfCard('ERC','🫘','#2980b9','erc')
+        ].filter(Boolean).join('') ||
+        `<div style="grid-column:1/-1;padding:20px;text-align:center;color:#888;background:#f9f9f9;border-radius:8px;border:1px dashed #ccc">
+          <div style="font-size:24px;margin-bottom:8px">🔍</div>
+          <b>No se encontraron casos</b> de estas enfermedades trazadoras en el período seleccionado.<br>
+          <small>Se buscaron CIE-10: A90-A97 (Dengue), B55 (Leishmaniasis), B57 (Chagas), B50-B54 (Malaria),
+          A15-A19 (Tuberculosis), B20-B24 (VIH), C__ (Cáncer), N18-N19 (ERC).</small>
+        </div>`}
       </div>
 
       <div class="data-table-wrap">
@@ -1145,38 +1157,42 @@ const APP = (() => {
         </div>
       </div>
 
-      <!-- Distribución geográfica -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
+      <!-- Distribución geográfica — tablas simples para máxima compatibilidad -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:18px">
         <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:12px">🗺️ Casos por Departamento</h4>
-          ${topDept.map(([dep,n])=>`
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <div style="flex:1;font-size:12px;font-weight:600;min-width:80px">${dep}</div>
-              <div style="flex:2;background:#f0f4f8;border-radius:4px;height:18px;position:relative">
-                <div style="width:${Math.min(n/topDept[0][1]*100,100)}%;height:100%;background:#8e44ad;border-radius:4px"></div>
-              </div>
-              <div style="font-size:12px;font-weight:700;color:#8e44ad;min-width:30px;text-align:right">${fmtN(n)}</div>
-            </div>`).join('')}
+          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:10px">🗺️ Casos por Departamento</h4>
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            ${topDept.map(([dep,n],i)=>`<tr style="border-bottom:1px solid #f0f4f8">
+              <td style="padding:5px 4px;font-weight:600">${dep}</td>
+              <td style="padding:5px 4px;text-align:right;font-weight:800;color:#8e44ad">${fmtN(n)}</td>
+              <td style="padding:5px 4px;width:90px">
+                <div style="background:#f0f4f8;border-radius:3px;height:12px;overflow:hidden">
+                  <div style="width:${Math.round(n/(topDept[0]?topDept[0][1]:1)*100)}%;min-width:2px;height:100%;background:#8e44ad"></div>
+                </div>
+              </td>
+            </tr>`).join('')}
+          </table>
         </div>
         <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:12px">📍 Top Municipios</h4>
-          ${topMun.map(([mun,n])=>`
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <div style="flex:1;font-size:12px;font-weight:600;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mun}</div>
-              <div style="flex:2;background:#f0f4f8;border-radius:4px;height:18px;position:relative">
-                <div style="width:${Math.min(n/topMun[0][1]*100,100)}%;height:100%;background:#1a4f7a;border-radius:4px"></div>
-              </div>
-              <div style="font-size:12px;font-weight:700;color:#1a4f7a;min-width:30px;text-align:right">${fmtN(n)}</div>
-            </div>`).join('')}
+          <h4 style="font-size:13px;font-weight:700;color:#1a4f7a;margin-bottom:10px">📍 Top Municipios</h4>
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            ${topMun.map(([mun,n])=>`<tr style="border-bottom:1px solid #f0f4f8">
+              <td style="padding:5px 4px;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mun}</td>
+              <td style="padding:5px 4px;text-align:right;font-weight:800;color:#1a4f7a">${fmtN(n)}</td>
+              <td style="padding:5px 4px;width:90px">
+                <div style="background:#f0f4f8;border-radius:3px;height:12px;overflow:hidden">
+                  <div style="width:${Math.round(n/(topMun[0]?topMun[0][1]:1)*100)}%;min-width:2px;height:100%;background:#1a4f7a"></div>
+                </div>
+              </td>
+            </tr>`).join('')}
+          </table>
         </div>
       </div>
 
       <!-- Gráfica por IPS -->
       <div class="chart-card" style="margin-bottom:18px">
         <h4>🏥 Casos Abiertos por IPS (Top ${Math.min(topIps.length,20)})</h4>
-        <div style="position:relative;height:${Math.max(200,Math.min(topIps.length,20)*32)}px">
-          <canvas id="ch-con-ips"></canvas>
-        </div>
+        <canvas id="ch-con-ips" height="${Math.max(240,Math.min(topIps.length,20)*26)}"></canvas>
       </div>
 
       <!-- Tabla por IPS -->
@@ -1191,14 +1207,11 @@ const APP = (() => {
         ${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico','Fecha Ingreso','Departamento','Municipio','Auditor','Observación Seguimiento'])}
       </div>`;
 
-    // Gráfica con timeout más largo para asegurar que el DOM esté listo
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const cvs = document.getElementById('ch-con-ips');
-        if (!cvs || !topIps.length) return;
-        CHARTS.barras('ch-con-ips', topIps.map(x=>x[0]), topIps.map(x=>x[1]), 'Casos Abiertos', '#f39c12');
-      });
-    });
+    // Gráfica — timeout para garantizar que el canvas esté en el DOM con dimensiones
+    setTimeout(() => {
+      if (!topIps.length) return;
+      CHARTS.barras('ch-con-ips', topIps.map(x=>x[0]), topIps.map(x=>x[1]), 'Casos Abiertos', '#f39c12');
+    }, 120);
   }
 
   function reingreso() {

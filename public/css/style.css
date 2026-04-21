@@ -81,33 +81,42 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* Evitar desbordamiento horizontal */
+  max-width: calc(100vw - var(--sidebar-w));
+  overflow-x: hidden;
 }
 
 #topbar {
   background: #fff;
   border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   position: sticky;
   top: 0;
   z-index: 50;
+  min-width: 0;
 }
-#topbar h1 { font-size: 16px; font-weight: 700; color: var(--primary); }
-#topbar .topbar-right { display: flex; align-items: center; gap: 12px; }
+#topbar h1 { font-size: 15px; font-weight: 700; color: var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+#topbar .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #topbar .badge-periodo {
   background: var(--primary-light);
   color: #fff;
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 #content {
   flex: 1;
-  padding: 24px;
+  padding: 20px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* ── TABS ── */
@@ -422,12 +431,14 @@ tr:hover td { background: #f8fafd; }
   align-items: center;
 }
 .filter-bar select, .filter-bar input {
-  padding: 7px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
   color: var(--text);
   background: #fff;
+  max-width: 160px;      /* Evitar que IPS muy largas revienten la barra */
+  min-width: 80px;
 }
 .filter-bar label { font-size: 12px; font-weight: 600; color: #666; }
 
