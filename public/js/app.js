@@ -44,19 +44,25 @@ const APP = (() => {
   function semColor(v, meta, higher=true){ if(!meta) return 'blue'; return higher ? (v>=meta?'green':v>=meta*.8?'orange':'red') : (v<=meta?'green':v<=meta*1.2?'orange':'red'); }
   function noData(msg='Carga la base de datos principal primero'){ return `<div class="no-data"><div class="nd-icon">📂</div><p>${msg}</p></div>`; }
 
-  function kpi(label, val, unit='', sub='', color='blue', icon='📊', info='') {
+  function kpi(label, val, unit='', sub='', color='blue', icon='📊', info='', navTo='') {
     const isNum = typeof val === 'number';
     const display = isNum ? fmt(val) : val;
     const bar = (unit==='%'||unit==='x1000') && isNum ? `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(val,100)}%;background:${color==='green'?'#27ae60':color==='red'?'#e74c3c':color==='orange'?'#f39c12':'#1a4f7a'}"></div></div>` : '';
     const infoBtn = info ? `<div class="kpi-info-btn" title="${info.replace(/"/g,"'")}">ⓘ
       <div class="kpi-tooltip">${info}</div>
     </div>` : '';
-    return `<div class="kpi-card ${color}">
+    const navStyle = navTo ? 'cursor:pointer;transition:transform .15s,box-shadow .15s;' : '';
+    const navClick = navTo ? `onclick="APP.navigate('${navTo}')" title="Ver módulo: ${navTo}"` : '';
+    const navBadge = navTo ? `<div style="position:absolute;bottom:8px;right:10px;font-size:10px;color:#aaa;letter-spacing:.3px">Ver más →</div>` : '';
+    return `<div class="kpi-card ${color}" style="${navStyle}position:relative" ${navClick}
+      ${navTo ? `onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,.13)'"
+                 onmouseout="this.style.transform='';this.style.boxShadow=''"` : ''}>
       ${infoBtn}
       <div class="kpi-icon">${icon}</div>
       <div class="kpi-label">${label}</div>
       <div class="kpi-value">${display}<small style="font-size:13px;font-weight:400"> ${unit}</small></div>
       ${sub?`<div class="kpi-sub">${sub}</div>`:''}${bar}
+      ${navBadge}
     </div>`;
   }
 
@@ -582,19 +588,19 @@ const APP = (() => {
       })()}
       <div class="section-title" style="margin-bottom:14px"><span>📊</span> Resumen General</div>
       <div class="kpi-grid">
-        ${kpi('Total Registros',    fmtN(r.length),             'pac.','',                                                     'blue',  '👥',  'Fuente: DETALLADO_AUDITORIA_HOSPITALARIA\nTodos los registros con los filtros aplicados.')}
-        ${kpi('Hospitalizados',     fmtN(d.hospPac),            '',    'En servicios de hospitalización',                      'blue',  '🏥',  'Fuente: campo Servicio\nPacientes en Hospitalización Adultos, Pediátrica y servicios de internación.\nCálculo: registros donde Servicio contiene "Hospitalización".')}
-        ${kpi('En UCI',             fmtN(d.uciPac),             '',    `${fmt(CALCS.divide(d.uciPac,r.length))}% del total`,  'purple','🫀',  'Fuente: campo Servicio\nPacientes en UCI Adulto, Neonatal o Pediátrica.\nCálculo: registros donde Servicio contiene "Cuidado Intensivo".')}
-        ${kpi('Estancias Activas',   fmtN(d.abiertos),           '',    `${fmt(CALCS.divide(d.abiertos,r.length))}% del total`,'orange','🔄',  'Fuente: campo Estado\nRegistros con Estado = "Abierto" (pacientes aún hospitalizados o en seguimiento).')}
-        ${kpi('Egresos (Cerrados)', fmtN(d.egresos),            '',    '',                                                     'blue',  '🚪',  'Fuente: campo Estado\nRegistros con Estado = "Cerrado" (pacientes dados de alta o egresados).')}
-        ${kpi('Fallecidos',         fmtN(d.fallecidos),         '',    `${fmt(d.tasaMortalidad)} x1000`,                       'red',   '⚕️', 'Fuente: campo Estado del Egreso\nRegistros donde Estado del Egreso contiene "Fallecido" o "Muerte".')}
-        ${kpi('Tasa Mortalidad',    d.tasaMortalidad,           'x1000','',                                                    semColor(d.tasaMortalidad,15,false),'📉','Fórmula: (Fallecidos ÷ Egresos) × 1.000\nMeta: ≤ 15 x1000\nFuente: campos Estado del Egreso y Estado.')}
-        ${kpi('Gestantes',          fmtN(d.gestantes),          '',    `${fmt(CALCS.divide(d.gestantes,r.length))}% del total`,'purple','🤱', 'Fuente: campo Gestación\nRegistros donde Gestación = "Sí".')}
-        ${kpi('Cesáreas',           d.tasaCesarea,              '%',   `${fmtN(d.cesareas)} de ${fmtN(d.gestantes)} gestantes`,semColor(d.tasaCesarea,50,false),'👶','Fórmula: (Cesáreas ÷ Gestantes) × 100\nMeta: ≤ 50%\nFuente: campo Vía Parto — contiene "cesarea".')}
-        ${kpi('Reingresos',         d.tasaReingreso,            '%',   `${fmtN(d.reingresos)} reingresos`,                    semColor(d.tasaReingreso,5,false),'🔁', 'Fórmula: (Reingresos ÷ Egresos) × 100\nMeta: ≤ 5%\nFuente: campo Reingreso = "Sí".')}
-        ${kpi('Con Glosa',          fmtN(d.conGlosa),           'casos',fmtM(d.valorGlosa * 1000),                           'red',   '📋',  'Fuente: campo Glosas\nRegistros con valor en Glosas (distinto de 0 o vacío).\nValor = Σ Valor Total Glosa × 1.000 (en COP).')}
-        ${kpi('Días Est. Prom',     d.diasEstanciaPromedio,     'días','por egreso',                                         'teal',  '🛏️', 'Fórmula: Σ Estancia ÷ N° Egresos\nFuente: campo Estancia (días de hospitalización por paciente).')}
-        ${kpi('Eventos Adversos',   fmtN(d.eventos),            '',    '',                                                    'orange','⚠️', 'Fuente: campo Eventos Adversos\nRegistros con valor numérico > 0 en Eventos Adversos.')}
+        ${kpi('Total Registros',    fmtN(r.length),             'pac.','',                                                     'blue',  '👥',  'Fuente: DETALLADO_AUDITORIA_HOSPITALARIA\nTodos los registros con los filtros aplicados.',                                   'hospitalizacion')}
+        ${kpi('Hospitalizados',     fmtN(d.hospPac),            '',    'En servicios de hospitalización',                      'blue',  '🏥',  'Fuente: campo Servicio\nPacientes en Hospitalización Adultos, Pediátrica y servicios de internación.\nCálculo: registros donde Servicio contiene "Hospitalización".', 'hospitalizacion')}
+        ${kpi('En UCI',             fmtN(d.uciPac),             '',    `${fmt(CALCS.divide(d.uciPac,r.length))}% del total`,  'purple','🫀',  'Fuente: campo Servicio\nPacientes en UCI Adulto, Neonatal o Pediátrica.\nCálculo: registros donde Servicio contiene "Cuidado Intensivo".',              'uci')}
+        ${kpi('Estancias Activas',  fmtN(d.abiertos),           '',    `${fmt(CALCS.divide(d.abiertos,r.length))}% del total`,'orange','🔄',  'Fuente: campo Estado\nRegistros con Estado = "Abierto" (pacientes aún hospitalizados o en seguimiento).',                                              'concurrencias')}
+        ${kpi('Egresos (Cerrados)', fmtN(d.egresos),            '',    '',                                                     'blue',  '🚪',  'Fuente: campo Estado\nRegistros con Estado = "Cerrado" (pacientes dados de alta o egresados).',                                                        'hospitalizacion')}
+        ${kpi('Fallecidos',         fmtN(d.fallecidos),         '',    `${fmt(d.tasaMortalidad)} x1000`,                       'red',   '⚕️', 'Fuente: campo Estado del Egreso\nRegistros donde Estado del Egreso contiene "Fallecido" o "Muerte".',                                                  'mortalidad')}
+        ${kpi('Tasa Mortalidad',    d.tasaMortalidad,           'x1000','',                                                    semColor(d.tasaMortalidad,15,false),'📉','Fórmula: (Fallecidos ÷ Egresos) × 1.000\nMeta: ≤ 15 x1000\nFuente: campos Estado del Egreso y Estado.',                      'mortalidad')}
+        ${kpi('Gestantes',          fmtN(d.gestantes),          '',    `${fmt(CALCS.divide(d.gestantes,r.length))}% del total`,'purple','🤱', 'Fuente: campo Gestación\nRegistros donde Gestación = "Sí".',                                                                                             'riamp')}
+        ${kpi('Cesáreas',           d.tasaCesarea,              '%',   `${fmtN(d.cesareas)} de ${fmtN(d.gestantes)} gestantes`,semColor(d.tasaCesarea,50,false),'👶','Fórmula: (Cesáreas ÷ Gestantes) × 100\nMeta: ≤ 50%\nFuente: campo Vía Parto — contiene "cesarea".',                              'cesarea')}
+        ${kpi('Reingresos',         d.tasaReingreso,            '%',   `${fmtN(d.reingresos)} reingresos`,                    semColor(d.tasaReingreso,5,false),'🔁', 'Fórmula: (Reingresos ÷ Egresos) × 100\nMeta: ≤ 5%\nFuente: campo Reingreso = "Sí".',                                           'reingreso')}
+        ${kpi('Con Glosa',          fmtN(d.conGlosa),           'casos',fmtM(d.valorGlosa * 1000),                           'red',   '📋',  'Fuente: campo Glosas\nRegistros con valor en Glosas (distinto de 0 o vacío).\nValor = Σ Valor Total Glosa × 1.000 (en COP).',                           'glosas')}
+        ${kpi('Días Est. Prom',     d.diasEstanciaPromedio,     'días','por egreso',                                         'teal',  '🛏️', 'Fórmula: Σ Estancia ÷ N° Egresos\nFuente: campo Estancia (días de hospitalización por paciente).',                                                       'estancia')}
+        ${kpi('Eventos Adversos',   fmtN(d.eventos),            '',    '',                                                    'orange','⚠️', 'Fuente: campo Eventos Adversos\nRegistros con valor numérico > 0 en Eventos Adversos.',                                                                  'eventos')}
       </div>
       <div class="chart-grid">
         <div class="chart-card"><h4>Distribución por IPS (Top 10)</h4><canvas id="ch-dash-ips" height="260"></canvas></div>
