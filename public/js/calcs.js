@@ -376,6 +376,9 @@ const CALCS = (() => {
       };
     }
 
+    // Servicios neonatales
+    const SVC_NEONATAL = ['UCI Neonatal','C. Intermedio Neonatal','C. Básico Neonatal'];
+
     return {
       total: r.length,
       // ── Dengue: separado en Sin signos / Con signos (igual que Power BI) ──
@@ -401,6 +404,13 @@ const CALCS = (() => {
       cancer:          calcIndicador(r, SVC_HOSP_UCI, ['C']),
       erc:             calcIndicador(r, SVC_HOSP_UCI, ['N18','N19']),
       respiratorias:   calcIndicador(r, SVC_HOSP,     ['J40','J41','J42','J43','J44','J45','J46','J47']),
+      // ── Eventos Recién Nacido — Res. 117/2026 ─────────
+      rnBajoPeso:      calcIndicador(r, SVC_NEONATAL, ['P070','P071']),
+      rnPesoExtremoBajo: calcIndicador(r, SVC_NEONATAL, ['P070']),
+      rnCongenitas:    calcIndicador(r, SVC_NEONATAL, [/^Q\d/]),
+      rnInfeccion:     calcIndicador(r, SVC_NEONATAL, ['P35','P36','P37','P38','P39']),
+      rnAsfixia:       calcIndicador(r, SVC_NEONATAL, ['P20','P21']),
+      rnIctericia:     calcIndicador(r, SVC_NEONATAL, ['P55','P56','P57','P58','P59']),
     };
   }
 
@@ -707,6 +717,133 @@ const CALCS = (() => {
     return g;
   }
 
+  // ── 20. COHORTE RECIÉN NACIDO — Res. 117/2026 ────────────
+  function calcRecienNacido(rows, filters) {
+    const r = applyFilters(rows, filters);
+
+    // ── Predicados de identificación ──
+    // Neonato por servicio: UCI Neonatal, C. Intermedio Neonatal, C. Básico Neonatal
+    const isNeonatalSvc = row =>
+      getServicios(row).some(s => /neonatal|neonat/i.test(s));
+
+    // Neonato por CIE-10: bloque P (condiciones perinatales)
+    const isCIEP = row => matchCIE(row, [/^P\d/]);
+
+    // Neonato por edad ≤ 28 días (campo Edad puede venir como "0 Días", "15 Días", "28 Días")
+    const isEdadNeonatal = row => {
+      const edad = String(get(row,'Edad')||'').toLowerCase();
+      // Días: 0-28
+      const mDias = edad.match(/^(\d+)\s*d[ií]a/i);
+      if (mDias) return parseInt(mDias[1]) <= 28;
+      // Meses: 0 meses
+      const mMeses = edad.match(/^0\s*mes/i);
+      if (mMeses) return true;
+      // Años: solo si es 0
+      const mAnios = edad.match(/^0\s*a[ñn]/i);
+      if (mAnios) return true;
+      return false;
+    };
+
+    // Filtro combinado: cualquiera de las tres fuentes
+    const isRN = row => isNeonatalSvc(row) || isCIEP(row) || isEdadNeonatal(row);
+
+    const rnRows = r.filter(isRN);
+
+    // ── Sub-grupos Res. 117/2026 ──
+    // P070 — Peso extremadamente bajo al nacer (< 1000 g)
+    const isPesoExtremoBajo = row => matchCIE(row, ['P070']);
+    // P071 — Otro peso bajo al nacer (1000–2499 g)
+    const isOtroPesoBajo    = row => matchCIE(row, ['P071']);
+    // Todos P07x (bajo peso en general)
+    const isBajoPeso        = row => matchCIE(row, ['P07']);
+    // P05 — Retardo crecimiento fetal / desnutrición fetal
+    const isCrecimientoLento = row => matchCIE(row, ['P05']);
+    // P20-P29 — Trastornos respiratorios y cardiovasculares perinatales
+    const isRespPerinat      = row => matchCIE(row, ['P20','P21','P22','P23','P24','P25','P26','P27','P28','P29']);
+    // Q — Malformaciones congénitas
+    const isCongénita        = row => matchCIE(row, [/^Q\d/]);
+    // Tamizaje neonatal alterado (hipotiroidismo congénito E00/E03, fenilcetonuria E70, galactosemia E74, etc.)
+    const isTamizajeAlterado = row =>
+      matchCIE(row, ['E00','E03','E70','E740','E743','H90']) ||
+      /tamizaje\s*alter|tamizaje\s*positivo|hipotiroidismo\s*cong/i.test(String(get(row,'Diagnostico')||get(row,'Cie10 Diagnostico')||get(row,'Observación Seguimiento')||''));
+    // Ictericia neonatal (P55-P59)
+    const isIctericia        = row => matchCIE(row, ['P55','P56','P57','P58','P59']);
+    // Infección neonatal (P35-P39)
+    const isInfeccion        = row => matchCIE(row, ['P35','P36','P37','P38','P39']);
+    // Asfixia / sufrimiento perinatal (P20, P21)
+    const isAsfixia          = row => matchCIE(row, ['P20','P21']);
+    // Fallecidos neonatales
+    const isFallecido        = row => /fallecid|muert/i.test(String(get(row,'Estado del Egreso')||''));
+    // Casos abiertos (aún hospitalizados)
+    const isAbierto          = row => String(get(row,'Estado')||'').toLowerCase() === 'abierto';
+
+    const pesoExtremoBajoRows = rnRows.filter(isPesoExtremoBajo);
+    const otroPesoBajoRows    = rnRows.filter(isOtroPesoBajo);
+    const bajoPesoRows        = rnRows.filter(isBajoPeso);
+    const congénitasRows      = rnRows.filter(isCongénita);
+    const tamizajeRows        = rnRows.filter(isTamizajeAlterado);
+    const ictericiaRows       = rnRows.filter(isIctericia);
+    const infeccionRows       = rnRows.filter(isInfeccion);
+    const asfixiaRows         = rnRows.filter(isAsfixia);
+    const fallecidosRows      = rnRows.filter(isFallecido);
+    const abiertoRows         = rnRows.filter(isAbierto);
+
+    // ── Distribución por diagnóstico agrupado ──
+    const porDx = {
+      'P070 Peso extremadam. bajo':  pesoExtremoBajoRows.length,
+      'P071 Otro peso bajo nacer':   otroPesoBajoRows.length,
+      'P05 Crec. fetal lento':       rnRows.filter(isCrecimientoLento).length,
+      'P20-29 Resp./Cardiov.perinat':rnRows.filter(isRespPerinat).length,
+      'P55-59 Ictericia neonatal':   ictericiaRows.length,
+      'P35-39 Infección neonatal':   infeccionRows.length,
+      'Q Malformación congénita':    congénitasRows.length,
+      'Tamizaje alterado':           tamizajeRows.length,
+    };
+
+    // ── Distribución por IPS ──
+    const porIps = {};
+    rnRows.forEach(row => {
+      const ips = get(row,'IPS') || 'Sin IPS';
+      if (!porIps[ips]) porIps[ips] = {
+        total: 0, bajoPeso: 0, congenita: 0, tamizaje: 0, fallecidos: 0, abiertos: 0
+      };
+      porIps[ips].total++;
+      if (isBajoPeso(row))        porIps[ips].bajoPeso++;
+      if (isCongénita(row))       porIps[ips].congenita++;
+      if (isTamizajeAlterado(row)) porIps[ips].tamizaje++;
+      if (isFallecido(row))       porIps[ips].fallecidos++;
+      if (isAbierto(row))         porIps[ips].abiertos++;
+    });
+
+    // ── Tendencia mensual ──
+    const tendenciaMes = groupByMesFiltered(r, isRN);
+
+    return {
+      total:           r.length,
+      totalRN:         rnRows.length,
+      pesoExtremoBajo: pesoExtremoBajoRows.length,
+      otroPesoBajo:    otroPesoBajoRows.length,
+      bajoPeso:        bajoPesoRows.length,
+      congenitas:      congénitasRows.length,
+      tamizajeAlterado:tamizajeRows.length,
+      ictericia:       ictericiaRows.length,
+      infeccion:       infeccionRows.length,
+      asfixia:         asfixiaRows.length,
+      fallecidos:      fallecidosRows.length,
+      abiertos:        abiertoRows.length,
+      tasaMortalidadRN: divide(fallecidosRows.length, rnRows.length),
+      tasaBajoPeso:    divide(bajoPesoRows.length, rnRows.length),
+      porDx, porIps, tendenciaMes,
+      // Filas para tabla de seguimiento
+      rows:            rnRows,
+      rowsBajoPeso:    bajoPesoRows,
+      rowsCongenitas:  congénitasRows,
+      rowsTamizaje:    tamizajeRows,
+      rowsFallecidos:  fallecidosRows,
+      rowsAbiertos:    abiertoRows,
+    };
+  }
+
   return {
     applyFilters, extractMeta, get, safeNum, divide, normStr: norm,
     setAuditoresMap, nombreAuditor,
@@ -716,6 +853,7 @@ const CALCS = (() => {
     calcSaludMental, calcRCV, calcRIAMP, calcGlosas,
     calcConcurrencias, calcReingreso, calcEventos,
     calcAIU, calcCYD, calcEstancia,
+    calcRecienNacido,
     groupByIPS, groupByIPSFiltered, groupByMes
   };
 })();

@@ -183,6 +183,7 @@ const APP = (() => {
       cyd:'🌱 Crecimiento y Desarrollo (CyD)',
       estancia:'🛏️ Estancia Detallada',
       ubicacion:'📍 Usuarios Internados — Estancias Activas',
+      rn:'👶 Cohorte Recién Nacido — Res. 117/2026',
       datos:'⚙️ Cargar Datos'
     };
     document.getElementById('topbar-title').textContent = titles[tab]||'Dashboard';
@@ -193,7 +194,7 @@ const APP = (() => {
     const tab = state.activeTab;
     const m = { dashboard, hospitalizacion, uci, mortalidad, cesarea, desnutricion,
                 enfermedades, edaira, saludmental, rcv, riamp, glosas, concurrencias,
-                reingreso, eventos, aiu, cyd, estancia, ubicacion, datos };
+                reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, datos };
     if (m[tab]) m[tab]();
   }
 
@@ -863,6 +864,41 @@ const APP = (() => {
         ${tablaIPS(d.respiratorias,   'ENFERMEDADES RESP. CRÓNICAS',   '🫁', '#1a4f7a')}
       </div>
 
+      <!-- ── Sección Recién Nacido — Res. 117/2026 ── -->
+      <div style="margin-top:24px;border-top:2px solid #e3f2fd;padding-top:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="section-title" style="margin:0"><span>🍼</span> Eventos Recién Nacido — Res. 117 de 2026</div>
+          <button class="btn btn-sm btn-primary" onclick="APP.navigate('rn')" style="font-size:12px">
+            Ver módulo completo →
+          </button>
+        </div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px">
+          Servicios: UCI Neonatal · C. Intermedio Neonatal · C. Básico Neonatal
+        </div>
+        <div class="kpi-grid" style="margin-bottom:14px">
+          ${['rnBajoPeso','rnPesoExtremoBajo','rnCongenitas','rnInfeccion','rnAsfixia','rnIctericia']
+            .map(k=>{
+              const e = d[k]; if(!e) return '';
+              const labels = {rnBajoPeso:'Bajo Peso (P070+P071)',rnPesoExtremoBajo:'Peso Extrem. Bajo (P070)',
+                rnCongenitas:'Malform. Congénitas (Q)',rnInfeccion:'Infección Neonatal (P35-39)',
+                rnAsfixia:'Asfixia (P20-21)',rnIctericia:'Ictericia Neonatal (P55-59)'};
+              const icons  = {rnBajoPeso:'⚖️',rnPesoExtremoBajo:'🚨',rnCongenitas:'🧬',
+                rnInfeccion:'🦠',rnAsfixia:'🫁',rnIctericia:'🟡'};
+              const colors = {rnBajoPeso:'orange',rnPesoExtremoBajo:'red',rnCongenitas:'green',
+                rnInfeccion:'red',rnAsfixia:'red',rnIctericia:'orange'};
+              return kpi(labels[k], fmtN(e.n), '', `Prom. ${fmt(e.promedio)} días est.`, colors[k], icons[k]);
+            }).join('')}
+        </div>
+        <div class="data-table-wrap">
+          ${tablaIPS(d.rnBajoPeso,        'BAJO PESO AL NACER — P070 + P071',       '⚖️', '#e67e22')}
+          ${tablaIPS(d.rnPesoExtremoBajo, 'PESO EXTREMADAM. BAJO — P070 (< 1.000g)','🚨', '#e74c3c')}
+          ${tablaIPS(d.rnCongenitas,      'MALFORMACIONES CONGÉNITAS — Q00-Q99',    '🧬', '#27ae60')}
+          ${tablaIPS(d.rnInfeccion,       'INFECCIÓN NEONATAL — P35-P39',           '🦠', '#c0392b')}
+          ${tablaIPS(d.rnAsfixia,         'ASFIXIA PERINATAL — P20-P21',            '🫁', '#8e44ad')}
+          ${tablaIPS(d.rnIctericia,       'ICTERICIA NEONATAL — P55-P59',           '🟡', '#f39c12')}
+        </div>
+      </div>
+
       <div class="chart-grid" style="margin-top:16px">
         <div class="chart-card" style="grid-column:1/-1"><h4>Comparativo N° Pacientes por Enfermedad Trazadora</h4><canvas id="ch-enf-bar" height="200"></canvas></div>
         <div class="chart-card"><h4>Promedio Días Estancia</h4><canvas id="ch-enf-prom" height="260"></canvas></div>
@@ -949,6 +985,195 @@ const APP = (() => {
       </div>
       <div class="data-table-wrap"><h4>Listado</h4>${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Programa Riesgo','Especialidad','Diagnostico','Estado del Egreso'])}</div>`;
     setTimeout(()=>CHARTS.barras('ch-sm-bar',Object.keys(d.eventos),Object.values(d.eventos),'Casos','#8e44ad'),50);
+  }
+
+  // ── COHORTE RECIÉN NACIDO — Res. 117/2026 ────────────────
+  function rn() {
+    const el = document.getElementById('tab-rn');
+    if (!state.rows.length) { el.innerHTML = noData(); return; }
+    const d = CALCS.calcRecienNacido(state.rows, state.filters);
+
+    // Sub-tabs internos
+    const subTab = el.dataset.subtab || 'resumen';
+
+    const subNav = `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;padding:0 2px">
+        ${[
+          ['resumen',    '📊 Resumen'],
+          ['bajopeso',   '⚖️ Bajo Peso'],
+          ['congenitas', '🧬 Congénitas'],
+          ['tamizaje',   '🔬 Tamizaje'],
+          ['abiertos',   '📂 Casos Abiertos'],
+          ['fallecidos', '🕊️ Fallecidos'],
+        ].map(([k,l])=>`<button class="btn btn-sm ${subTab===k?'btn-primary':'btn-secondary'}"
+          onclick="document.getElementById('tab-rn').dataset.subtab='${k}';APP.navigate('rn')"
+          style="font-size:12px">${l}</button>`).join('')}
+      </div>`;
+
+    let contenido = '';
+
+    if (subTab === 'resumen') {
+      contenido = `
+        <div class="kpi-grid">
+          ${kpi('Total Recién Nacidos', fmtN(d.totalRN), '', `${fmt(CALCS.divide(d.totalRN,d.total))}% del total`, 'blue', '👶',
+            'Neonatos identificados por servicio neonatal, CIE-10 bloque P o edad ≤ 28 días.\nFuente: Detallado Auditoría Hospitalaria.')}
+          ${kpi('Bajo Peso al Nacer', fmtN(d.bajoPeso), '', `${fmt(d.tasaBajoPeso)}% de RN`, d.bajoPeso>0?'orange':'green', '⚖️',
+            'CIE-10: P070 (< 1.000 g) + P071 (1.000–2.499 g)\nResolución 117 de 2026 — Cohorte RN.')}
+          ${kpi('Peso Extrem. Bajo (P070)', fmtN(d.pesoExtremoBajo), '', '< 1.000 g', d.pesoExtremoBajo>0?'red':'green', '🚨',
+            'CIE-10: P070 — Peso extremadamente bajo al nacer (< 1.000 g)\nAlto riesgo: requiere seguimiento intensivo.')}
+          ${kpi('Otro Peso Bajo (P071)', fmtN(d.otroPesoBajo), '', '1.000–2.499 g', d.otroPesoBajo>0?'orange':'green', '⚠️',
+            'CIE-10: P071 — Otro peso bajo al nacer (1.000–2.499 g)')}
+          ${kpi('Malform. Congénitas', fmtN(d.congenitas), '', `${fmt(CALCS.divide(d.congenitas,d.totalRN))}% de RN`, d.congenitas>0?'orange':'green', '🧬',
+            'CIE-10: Q00–Q99 — Malformaciones y anomalías congénitas.\nSeguimiento prioritario según Res. 117/2026.')}
+          ${kpi('Tamizaje Alterado', fmtN(d.tamizajeAlterado), '', '', d.tamizajeAlterado>0?'red':'green', '🔬',
+            'CIE-10: E00, E03, E70, E74, H90 — Hipotiroidismo congénito, fenilcetonuria, galactosemia, hipoacusia.\nTamizaje neonatal obligatorio.')}
+          ${kpi('Ictericia Neonatal', fmtN(d.ictericia), '', '', d.ictericia>0?'orange':'green', '🟡',
+            'CIE-10: P55–P59 — Ictericia neonatal (hemolítica, por incompatibilidad, etc.)')}
+          ${kpi('Infección Neonatal', fmtN(d.infeccion), '', '', d.infeccion>0?'red':'green', '🦠',
+            'CIE-10: P35–P39 — Infecciones específicas del período perinatal.')}
+          ${kpi('Asfixia Perinatal', fmtN(d.asfixia), '', '', d.asfixia>0?'red':'green', '🫁',
+            'CIE-10: P20–P21 — Hipoxia intrauterina y asfixia al nacer.')}
+          ${kpi('Casos Abiertos', fmtN(d.abiertos), '', 'Aún hospitalizados', d.abiertos>0?'orange':'green', '📂',
+            'Recién nacidos con estado = Abierto (aún en hospitalización).')}
+          ${kpi('Fallecidos Neonatales', fmtN(d.fallecidos), '', `Mortalidad ${fmt(d.tasaMortalidadRN)}%`, d.fallecidos>0?'red':'green', '🕊️',
+            'Fallecidos entre los recién nacidos identificados en el período.\nFórmula: (Fallecidos RN ÷ Total RN) × 100')}
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card"><h4>📊 RN por Diagnóstico Agrupado</h4><canvas id="ch-rn-dx" height="280"></canvas></div>
+          <div class="chart-card"><h4>📍 RN por IPS (Top 12)</h4><canvas id="ch-rn-ips" height="280"></canvas></div>
+          <div class="chart-card" style="grid-column:1/-1"><h4>📅 Tendencia Mensual — Ingresos RN</h4><canvas id="ch-rn-mes" height="180"></canvas></div>
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">📋 Listado General Recién Nacidos (${fmtN(d.totalRN)} registros)</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('todos')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rows, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
+        </div>`;
+
+    } else if (subTab === 'bajopeso') {
+      contenido = `
+        <div style="background:#fff8e1;border-left:4px solid #f39c12;padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+          <strong>⚖️ Seguimiento Bajo Peso al Nacer — Res. 117/2026</strong><br>
+          P070: Peso extremadamente bajo (&lt; 1.000 g) · P071: Otro peso bajo (1.000–2.499 g)
+        </div>
+        <div class="kpi-grid">
+          ${kpi('Total Bajo Peso', fmtN(d.bajoPeso), '', `${fmt(d.tasaBajoPeso)}% de RN`, 'orange', '⚖️')}
+          ${kpi('P070 Extrem. Bajo', fmtN(d.pesoExtremoBajo), '', '< 1.000 g · Alto riesgo', 'red', '🚨')}
+          ${kpi('P071 Otro Bajo', fmtN(d.otroPesoBajo), '', '1.000–2.499 g', 'orange', '⚠️')}
+          ${kpi('Fallecidos c/ Bajo Peso', fmtN(d.rowsBajoPeso.filter(r=>CALCS.get(r,'Estado del Egreso')&&/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')))).length), '', '', 'red', '🕊️')}
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">Lista Bajo Peso al Nacer (${fmtN(d.rowsBajoPeso.length)})</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('bajopeso')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rowsBajoPeso, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado del Egreso','Estancia','Observación Seguimiento'])}
+        </div>`;
+
+    } else if (subTab === 'congenitas') {
+      contenido = `
+        <div style="background:#e8f5e9;border-left:4px solid #27ae60;padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+          <strong>🧬 Enfermedades Congénitas — Seguimiento Res. 117/2026</strong><br>
+          CIE-10: Q00–Q99 — Malformaciones, deformidades y anomalías cromosómicas
+        </div>
+        <div class="kpi-grid">
+          ${kpi('Total Congénitas', fmtN(d.congenitas), '', `${fmt(CALCS.divide(d.congenitas,d.totalRN))}% de RN`, 'green', '🧬')}
+          ${kpi('Fallecidos c/ Congénita', fmtN(d.rowsCongenitas.filter(r=>CALCS.get(r,'Estado del Egreso')&&/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')))).length), '', '', 'red', '🕊️')}
+          ${kpi('Casos Abiertos', fmtN(d.rowsCongenitas.filter(r=>String(CALCS.get(r,'Estado')||'').toLowerCase()==='abierto').length), '', 'En seguimiento activo', 'orange', '📂')}
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">Lista Enfermedades Congénitas (${fmtN(d.rowsCongenitas.length)})</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('congenitas')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rowsCongenitas, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Estancia','Observación Seguimiento'])}
+        </div>`;
+
+    } else if (subTab === 'tamizaje') {
+      contenido = `
+        <div style="background:#f3e5f5;border-left:4px solid #8e44ad;padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+          <strong>🔬 Tamizaje Neonatal Alterado — Res. 117/2026</strong><br>
+          Hipotiroidismo congénito (E00/E03) · Fenilcetonuria (E70) · Galactosemia (E74) · Hipoacusia (H90)
+        </div>
+        <div class="kpi-grid">
+          ${kpi('Tamizaje Alterado', fmtN(d.tamizajeAlterado), '', `${fmt(CALCS.divide(d.tamizajeAlterado,d.totalRN))}% de RN`, 'purple', '🔬')}
+          ${kpi('En Seguimiento Activo', fmtN(d.rowsTamizaje.filter(r=>String(CALCS.get(r,'Estado')||'').toLowerCase()==='abierto').length), '', '', 'orange', '📂')}
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">Lista Tamizaje Alterado (${fmtN(d.rowsTamizaje.length)})</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('tamizaje')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rowsTamizaje, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Observación Seguimiento'])}
+        </div>`;
+
+    } else if (subTab === 'abiertos') {
+      contenido = `
+        <div style="background:#e3f2fd;border-left:4px solid #1a4f7a;padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+          <strong>📂 Casos Abiertos — Recién Nacidos en Seguimiento Activo</strong><br>
+          Neonatos con estado = Abierto (aún hospitalizados o en seguimiento). Prioridad Res. 117/2026.
+        </div>
+        <div class="kpi-grid">
+          ${kpi('Total Abiertos', fmtN(d.abiertos), '', 'En seguimiento', 'blue', '📂')}
+          ${kpi('c/ Bajo Peso', fmtN(d.rowsAbiertos.filter(r=>CALCS.matchCIE?true:true).filter(r=>['P070','P071'].some(p=>String(CALCS.get(r,'Diagnostico')||'').includes(p))).length), '', '', 'orange', '⚖️')}
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">Casos Abiertos (${fmtN(d.rowsAbiertos.length)})</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('abiertos')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rowsAbiertos, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
+        </div>`;
+
+    } else if (subTab === 'fallecidos') {
+      contenido = `
+        <div style="background:#fce4ec;border-left:4px solid #e74c3c;padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:13px">
+          <strong>🕊️ Mortalidad Neonatal</strong><br>
+          Recién nacidos con egreso = Fallecido en el período seleccionado.
+        </div>
+        <div class="kpi-grid">
+          ${kpi('Total Fallecidos RN', fmtN(d.fallecidos), '', `Tasa ${fmt(d.tasaMortalidadRN)}%`, 'red', '🕊️',
+            'Fórmula: (RN Fallecidos ÷ Total RN) × 100')}
+        </div>
+        <div class="data-table-wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0">Fallecidos Neonatales (${fmtN(d.rowsFallecidos.length)})</h4>
+            <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('fallecidos')">⬇️ Exportar</button>
+          </div>
+          ${buildTable(d.rowsFallecidos, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Estado del Egreso','Estancia','Auditor','Observación Seguimiento'])}
+        </div>`;
+    }
+
+    el.innerHTML = `${filterBar()}
+      <div style="margin-bottom:14px">
+        <div class="section-title"><span>👶</span> Cohorte Recién Nacido — Resolución 117 de 2026 · Min. Salud Colombia</div>
+        <div style="font-size:12px;color:#888;margin-top:4px">
+          Fuente: Detallado Auditoría Hospitalaria · Identificación por servicio neonatal, CIE-10 bloque P o edad ≤ 28 días
+        </div>
+      </div>
+      ${subNav}
+      ${contenido}`;
+
+    // Gráficos solo en resumen
+    if (subTab === 'resumen') {
+      setTimeout(() => {
+        // Diagnósticos
+        const dxEntries = Object.entries(d.porDx).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+        if (dxEntries.length) CHARTS.barrasHoriz('ch-rn-dx', dxEntries.map(x=>x[0]), dxEntries.map(x=>x[1]), 'Casos', '#1a4f7a');
+        // Por IPS
+        const ipsTop = Object.entries(d.porIps).sort((a,b)=>b[1].total-a[1].total).slice(0,12);
+        if (ipsTop.length) CHARTS.barrasAgrupadas('ch-rn-ips', ipsTop.map(x=>x[0]), [
+          { label: 'Total RN',    data: ipsTop.map(x=>x[1].total) },
+          { label: 'Bajo Peso',   data: ipsTop.map(x=>x[1].bajoPeso) },
+          { label: 'Congénitas',  data: ipsTop.map(x=>x[1].congenita) },
+          { label: 'Fallecidos',  data: ipsTop.map(x=>x[1].fallecidos) },
+        ]);
+        // Tendencia mensual
+        const meses = Object.entries(d.tendenciaMes).sort((a,b)=>a[0]>b[0]?1:-1);
+        if (meses.length) CHARTS.linea('ch-rn-mes', meses.map(x=>x[0]), meses.map(x=>x[1]), 'Ingresos RN', '#1a4f7a');
+      }, 50);
+    }
   }
 
   function rcv() {
@@ -1686,6 +1911,21 @@ const APP = (() => {
     setFilter: (k,v) => { state.filters[k]=v; render(); },
     setFilterDpto: (v) => { state.filters.departamento=v; state.filters.municipio='todos'; render(); },
     resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',departamento:'todos',municipio:'todos'}; render(); },
+    // ── Exportar subgrupos del tab RN ────────────────────────
+    exportRN: (subgrupo) => {
+      if (!state.rows.length) { toast('Sin datos cargados','error'); return; }
+      const d = CALCS.calcRecienNacido(state.rows, state.filters);
+      const mapa = {
+        todos:      { rows: d.rows,          name: 'RN_General' },
+        bajopeso:   { rows: d.rowsBajoPeso,  name: 'RN_BajoPeso_P070_P071' },
+        congenitas: { rows: d.rowsCongenitas,name: 'RN_Congenitas' },
+        tamizaje:   { rows: d.rowsTamizaje,  name: 'RN_Tamizaje_Alterado' },
+        abiertos:   { rows: d.rowsAbiertos,  name: 'RN_Casos_Abiertos' },
+        fallecidos: { rows: d.rowsFallecidos,name: 'RN_Fallecidos' },
+      };
+      const { rows, name } = mapa[subgrupo] || mapa.todos;
+      exportExcel(rows, name, ['IPS','Nombre Paciente','Numero Identificacion','Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Servicio','Estancia','Programa Riesgo','Auditor','Observación Seguimiento']);
+    },
     exportTab: () => {
       const tab = state.activeTab;
       const tabNames = {
@@ -1694,7 +1934,7 @@ const APP = (() => {
         enfermedades:'Enfermedades', edaira:'EDA_IRA', saludmental:'SaludMental',
         rcv:'RCV', riamp:'RIAMP', glosas:'Glosas', concurrencias:'Concurrencias',
         reingreso:'Reingreso', eventos:'EventosAdversos', aiu:'AIU', cyd:'CyD',
-        estancia:'Estancia', ubicacion:'Ubicacion_Pacientes'
+        estancia:'Estancia', ubicacion:'Ubicacion_Pacientes', rn:'Cohorte_RecienNacido'
       };
       const name = tabNames[tab] || tab;
 

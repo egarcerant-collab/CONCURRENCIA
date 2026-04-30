@@ -229,5 +229,38 @@ const CHARTS = (() => {
     });
   }
 
-  return { barrasHospitalarios, barrasMortalidad, dona, barras, lineas, barrasAgrupadas, gauge, barrasRiesgo, barrasSaludMental, fmt, fmtMoney, destroy, create };
+  // ── Barras horizontales (para diagnósticos con etiquetas largas) ──
+  function barrasHoriz(id, labels, values, label = 'Casos', color = '#1a4f7a') {
+    return create(id, {
+      type: 'bar',
+      data: {
+        labels: labels.map(l => l.length > 35 ? l.substring(0,33)+'…' : l),
+        datasets: [{ label, data: values, backgroundColor: color, borderRadius: 4 }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' ' + ctx.raw } } },
+        scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } }
+      }
+    });
+  }
+
+  // ── Línea simple (tendencia de un solo dataset) ──
+  function linea(id, labels, values, label = 'Valor', color = '#1a4f7a') {
+    return create(id, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{ label, data: values, borderColor: color, backgroundColor: color+'33', fill: true, tension: 0.4, pointRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  return { barrasHospitalarios, barrasMortalidad, dona, barras, lineas, linea, barrasAgrupadas, barrasHoriz, gauge, barrasRiesgo, barrasSaludMental, fmt, fmtMoney, destroy, create };
 })();
