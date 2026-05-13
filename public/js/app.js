@@ -1918,10 +1918,6 @@ const APP = (() => {
             style="padding:9px 20px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
             🔄 Recargar desde Supabase
           </button>
-          <button id="admin-sync-btn" onclick="APP.hospitalSync()"
-            style="padding:9px 20px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-            ▶ Ejecutar descarga automática
-          </button>
           <span style="font-size:11px;color:#888">Restaura los datos ya guardados en la nube</span>
         </div>
         <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto">
@@ -2009,10 +2005,6 @@ const APP = (() => {
               📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
             </span>
           </label>
-          <button id="btn-hospital-exec" onclick="APP.hospitalSync()"
-            style="padding:11px 24px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
-            ▶ Ejecutar descarga automática
-          </button>
           <button onclick="APP.recargarNube()"
             style="padding:11px 24px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
             🔄 Recargar desde Supabase
