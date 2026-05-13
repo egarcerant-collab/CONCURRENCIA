@@ -12,6 +12,7 @@ const APP = (() => {
     estanciaRows: [], // ESTANCIA DETALLADA — estancia por servicio
     meta: { ips:[], anios:[], meses:[] },
     filters: { ips:'todos', anio:'todos', mes:'todos', meses:[], departamento:'todos', municipio:'todos' },
+    tabFilters: {},    // filtros independientes por pestaña
     _mesOpen: false,   // estado del dropdown multi-mes
     auditoresMap: {},
     activeTab: 'datos',
@@ -235,7 +236,16 @@ const APP = (() => {
     const countBadge = modLabel
       ? `<span style="font-size:11px;color:#1a4f7a;font-weight:600;background:#e8f0fe;padding:3px 8px;border-radius:10px">${fmtN(modCount)} ${modLabel}</span>`
       : `<span style="font-size:11px;color:#888">${fmtN(modCount)} registros</span>`;
+    // Indicador de filtros activos en esta pestaña
+    const f = state.filters;
+    const tieneFiltroPestaña = f.ips !== 'todos' || f.anio !== 'todos' ||
+      (f.meses && f.meses.length > 0) || f.departamento !== 'todos' || f.municipio !== 'todos';
+    const filtroBadge = tieneFiltroPestaña
+      ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border:1px solid #ffc107;border-radius:8px;padding:2px 7px;margin-left:4px">🔽 Filtros activos en esta pestaña</span>`
+      : '';
+
     return `<div class="filter-bar">
+      ${filtroBadge}
       ${departamentos.length ? `
       <label>🗺️ Dpto:</label>
       <select onchange="APP.setFilterDpto(this.value)">
@@ -321,8 +331,19 @@ const APP = (() => {
     render();
   }
 
+  // ── Filtros por pestaña: cada tab tiene su propio estado de filtros ──
+  function _getTabFilters(tab) {
+    if (!state.tabFilters[tab]) {
+      state.tabFilters[tab] = { ips:'todos', anio:'todos', mes:'todos', meses:[], departamento:'todos', municipio:'todos' };
+    }
+    return state.tabFilters[tab];
+  }
+
   function render() {
     const tab = state.activeTab;
+    // Intercambiar state.filters al objeto del tab activo
+    // → todos los módulos leen/escriben state.filters sin cambios
+    state.filters = _getTabFilters(tab);
     const m = { dashboard, hospitalizacion, uci, mortalidad, cesarea, desnutricion,
                 enfermedades, edaira, saludmental, rcv, riamp, glosas, concurrencias,
                 reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, datos, admin };
@@ -2684,7 +2705,14 @@ const APP = (() => {
     },
     setFilter: (k,v) => { state.filters[k]=v; render(); },
     setFilterDpto: (v) => { state.filters.departamento=v; state.filters.municipio='todos'; render(); },
-    resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',meses:[],departamento:'todos',municipio:'todos'}; state._mesOpen=false; render(); },
+    resetFilters: () => {
+      // Reinicializa solo los filtros del tab activo — no afecta otras pestañas
+      state.tabFilters[state.activeTab] = {ips:'todos',anio:'todos',mes:'todos',meses:[],departamento:'todos',municipio:'todos'};
+      state.filters = state.tabFilters[state.activeTab];
+      state._mesOpen = false;
+      const p = document.getElementById('mes-panel'); if (p) p.remove();
+      render();
+    },
     toggleMesDropdown: () => {
       // Si ya existe, eliminarlo (toggle off)
       const existing = document.getElementById('mes-panel');
