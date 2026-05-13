@@ -687,19 +687,59 @@ const APP = (() => {
       return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : '—';
     }
 
-    // Genera tabla de detalle condicional
-    const tablaUCI = (titulo, emoji, rows) => !rows.length ? '' : `
+    // Genera tabla de detalle con botón exportar individual
+    const tablaUCI = (titulo, emoji, key, rows) => !rows.length ? '' : `
       <div class="data-table-wrap">
-        <h4 style="margin-bottom:8px">${emoji} ${titulo}
-          <span style="font-size:12px;font-weight:400;color:#888;margin-left:8px">
-            ${fmtN(rows.length)} pacientes · Estancia promedio: <b>${avgEst(rows)} días</b>
-          </span>
-        </h4>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#f8fafd;border-bottom:1px solid #eef2f7">
+          <h4 style="margin:0;font-size:13px">${emoji} ${titulo}
+            <span style="font-size:12px;font-weight:400;color:#888;margin-left:8px">
+              ${fmtN(rows.length)} pacientes · Estancia prom. <b>${avgEst(rows)} días</b>
+            </span>
+          </h4>
+          <button class="btn btn-secondary btn-sm" onclick="APP.exportUCI(['${key}'])">⬇️ Exportar este tipo</button>
+        </div>
         ${buildTable(rows,['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad',
           'Fecha Ingreso','Fecha Egreso','Estancia','Diagnostico','Estado del Egreso','Auditor'])}
       </div>`;
 
+    // Panel de exportación con checkboxes por tipo
+    const chk = (id, label, n, checked=true) =>
+      n > 0 ? `<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;padding:8px 14px;border:1.5px solid #d1dce8;border-radius:8px;background:#fff;white-space:nowrap">
+        <input type="checkbox" id="${id}" ${checked?'checked':''} style="width:15px;height:15px;accent-color:#1a4f7a">
+        <span>${label}</span>
+        <span style="background:#e8eef4;color:#555;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px">${fmtN(n)}</span>
+      </label>` : '';
+
     el.innerHTML = `${filterBar()}
+      <!-- ── PANEL EXPORTAR UCI ── -->
+      <div style="background:#fff;border:2px solid #1a4f7a;border-radius:12px;padding:18px 20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#1a4f7a">⬇️ Exportar UCI — selecciona los tipos a incluir en el Excel</div>
+            <div style="font-size:11px;color:#888;margin-top:2px">Marca uno o varios tipos y descarga el consolidado</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="document.querySelectorAll('[id^=uci-exp-]').forEach(c=>c.checked=true)"
+              style="font-size:11px;padding:5px 12px;border:1px solid #1a4f7a;border-radius:6px;background:#1a4f7a;color:#fff;cursor:pointer">✅ Todos</button>
+            <button onclick="document.querySelectorAll('[id^=uci-exp-]').forEach(c=>c.checked=false)"
+              style="font-size:11px;padding:5px 12px;border:1px solid #aaa;border-radius:6px;background:#f5f5f5;cursor:pointer">☐ Ninguno</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+          ${chk('uci-exp-uciA',   '🧑 UCI Adulto',              d.uciAdulto,    true)}
+          ${chk('uci-exp-uciN',   '👶 UCI Neonatal',             d.uciNeonatal,  true)}
+          ${chk('uci-exp-uciP',   '🧒 UCI Pediátrica',           d.uciPediatrica,true)}
+          ${chk('uci-exp-interA', '🛏️ Intermedio Adulto',       d.interAdulto,  false)}
+          ${chk('uci-exp-interN', '🛏️ Intermedio Neonatal',     d.interNeonatal,false)}
+          ${chk('uci-exp-interP', '🛏️ Intermedio Pediátrico',   d.interPediatrica,false)}
+          ${chk('uci-exp-basN',   '🍼 C. Básico Neonatal',       d.basNeonatal,  false)}
+        </div>
+        <button onclick="APP.exportUCI()"
+          style="padding:10px 28px;background:#e67e22;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+          ⬇️ Descargar Excel con selección
+        </button>
+      </div>
+
       <div style="margin:0 0 6px;font-size:11px;color:#888;font-weight:700;letter-spacing:.8px;text-transform:uppercase">Cuidado Intensivo</div>
       <div class="kpi-grid">
         ${kpi('UCI Total',fmtN(d.uciTotal),'pac.',`${fmt(d.tasaUciTotal)}% de ${fmtN(d.totalHosp)} hospitalizados`,'blue','🫀',
@@ -717,12 +757,11 @@ const APP = (() => {
 
       <div style="margin:18px 0 6px;font-size:11px;color:#888;font-weight:700;letter-spacing:.8px;text-transform:uppercase">Cuidado Intermedio y Básico</div>
       <div class="kpi-grid">
-        ${kpi('Intermedio Adulto',fmtN(d.interAdulto),'','','orange','🛏️','Servicio contiene "Intermedio Adulto".')}
-        ${kpi('Intermedio Neonatal',fmtN(d.interNeonatal),'','','purple','🛏️','Servicio contiene "Intermedio Neonatal".')}
+        ${kpi('Intermedio Adulto',   fmtN(d.interAdulto),   '','','orange','🛏️','Servicio contiene "Intermedio Adulto".')}
+        ${kpi('Intermedio Neonatal', fmtN(d.interNeonatal), '','','purple','🛏️','Servicio contiene "Intermedio Neonatal".')}
         ${kpi('Intermedio Pediátrico',fmtN(d.interPediatrica),'','','teal','🛏️','Servicio contiene "Intermedio Pedi".')}
-        ${kpi('C. Básico Neonatal',fmtN(d.basNeonatal),'','','green','🍼','Servicio contiene "Básico Neonatal".')}
-        ${kpi('Total Hospitalizados',fmtN(d.totalHosp),'','base de comparación','blue','🏥',
-          'Total de pacientes en servicios de hospitalización.')}
+        ${kpi('C. Básico Neonatal',  fmtN(d.basNeonatal),   '','','green','🍼','Servicio contiene "Básico Neonatal".')}
+        ${kpi('Total Hospitalizados',fmtN(d.totalHosp),     '','base de comparación','blue','🏥','Total hospitalizados.')}
       </div>
 
       <div class="chart-grid">
@@ -730,9 +769,13 @@ const APP = (() => {
         <div class="chart-card"><h4>UCI por IPS (Top 12)</h4><canvas id="ch-uci-ips" height="260"></canvas></div>
       </div>
 
-      ${tablaUCI('UCI Adulto','👨',d.rows_uciA)}
-      ${tablaUCI('UCI Neonatal','👶',d.rows_uciN)}
-      ${tablaUCI('UCI Pediátrica','🧒',d.rows_uciP)}`;
+      ${tablaUCI('UCI Adulto',            '👨','uciA',   d.rows_uciA)}
+      ${tablaUCI('UCI Neonatal',          '👶','uciN',   d.rows_uciN)}
+      ${tablaUCI('UCI Pediátrica',        '🧒','uciP',   d.rows_uciP)}
+      ${tablaUCI('C. Intermedio Adulto',  '🛏️','interA', d.rows_interA||[])}
+      ${tablaUCI('C. Intermedio Neonatal','🛏️','interN', d.rows_interN||[])}
+      ${tablaUCI('C. Intermedio Pediátrico','🛏️','interP',d.rows_interP||[])}
+      ${tablaUCI('C. Básico Neonatal',    '🍼','basN',   d.rows_basN||[])}`;
 
     setTimeout(()=>{
       CHARTS.dona('ch-uci-tipo',['UCI Adulto','UCI Neonatal','UCI Pediátrica'],
@@ -2124,6 +2167,44 @@ const APP = (() => {
     setFilter: (k,v) => { state.filters[k]=v; render(); },
     setFilterDpto: (v) => { state.filters.departamento=v; state.filters.municipio='todos'; render(); },
     resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',departamento:'todos',municipio:'todos'}; render(); },
+    // ── Exportar UCI con selección de tipos ─────────────────
+    // keys: arreglo de claves ['uciA','uciN',...] o null=lee checkboxes del DOM
+    exportUCI: (keys) => {
+      if (!state.rows.length) { toast('Sin datos cargados','error'); return; }
+      const d = CALCS.calcUCI(state.rows, state.filters);
+      const MAPA = {
+        uciA:   { rows: d.rows_uciA   ||[], label:'UCI Adulto' },
+        uciN:   { rows: d.rows_uciN   ||[], label:'UCI Neonatal' },
+        uciP:   { rows: d.rows_uciP   ||[], label:'UCI Pediátrica' },
+        interA: { rows: d.rows_interA ||[], label:'C. Intermedio Adulto' },
+        interN: { rows: d.rows_interN ||[], label:'C. Intermedio Neonatal' },
+        interP: { rows: d.rows_interP ||[], label:'C. Intermedio Pediátrico' },
+        basN:   { rows: d.rows_basN   ||[], label:'C. Básico Neonatal' },
+      };
+      // Si no se pasan keys, leer checkboxes del DOM
+      const activos = keys || Object.keys(MAPA).filter(k => {
+        const el = document.getElementById('uci-exp-'+k);
+        return el ? el.checked : false;
+      });
+      if (!activos.length) { toast('Selecciona al menos un tipo de UCI','error'); return; }
+      const UCI_COLS = ['Tipo UCI','IPS','IPS Primaria','Nombre Paciente',
+        'Numero Identificacion','Tipo Identificacion','Edad','Sexo',
+        'Fecha Ingreso','Fecha Egreso','Estancia','Servicio',
+        'Diagnostico','Cie10 Diagnostico','Estado del Egreso','Auditor'];
+      const allRows = [];
+      activos.forEach(k => {
+        const { rows, label } = MAPA[k] || {};
+        if (!rows) return;
+        rows.forEach(r => {
+          const o = {'Tipo UCI': label};
+          UCI_COLS.slice(1).forEach(c => { o[c] = CALCS.get(r,c) ?? ''; });
+          allRows.push(o);
+        });
+      });
+      if (!allRows.length) { toast('No hay registros en los tipos seleccionados','error'); return; }
+      const nombre = 'UCI_'+activos.map(k=>MAPA[k].label.replace(/[\s.]/g,'_')).join('+');
+      exportExcel(allRows, nombre, UCI_COLS);
+    },
     // ── Exportar subgrupos del tab RN ────────────────────────
     exportRN: (subgrupo) => {
       if (!state.rows.length) { toast('Sin datos cargados','error'); return; }
