@@ -266,7 +266,9 @@ const CALCS = (() => {
       tasaUciAdulto:    divide(uciA.length, uciTotal),
       tasaUciNeonatal:  divide(uciN.length, uciTotal),
       tasaUciPediatrica:divide(uciP.length, uciTotal),
-      porIps, rows: uciTot, rows_uciA: uciA, rows_uciN: uciN, rows_uciP: uciP
+      porIps, rows: uciTot,
+      rows_uciA: uciA, rows_uciN: uciN, rows_uciP: uciP,
+      rows_interA: interA, rows_interN: interN, rows_interP: interP, rows_basN: basN
     };
   }
 

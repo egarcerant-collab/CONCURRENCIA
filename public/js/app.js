@@ -2215,7 +2215,26 @@ const APP = (() => {
         }
         if (tab === 'uci') {
           const d = CALCS.calcUCI(state.rows, f);
-          return project(d.rows || []);
+          // Columnas específicas UCI
+          const UCI_COLS = ['Tipo UCI','IPS','IPS Primaria','Nombre Paciente',
+            'Numero Identificacion','Tipo Identificacion','Edad','Sexo',
+            'Fecha Ingreso','Fecha Egreso','Estancia','Servicio',
+            'Diagnostico','Cie10 Diagnostico','Estado del Egreso','Auditor'];
+          // Agrega columna "Tipo UCI" a cada grupo
+          const tagged = (rows, tipo) => rows.map(r => {
+            const o = {'Tipo UCI': tipo};
+            UCI_COLS.slice(1).forEach(c => { o[c] = CALCS.get(r,c) ?? ''; });
+            return o;
+          });
+          return [
+            ...tagged(d.rows_uciA   || [], 'UCI Adulto'),
+            ...tagged(d.rows_uciN   || [], 'UCI Neonatal'),
+            ...tagged(d.rows_uciP   || [], 'UCI Pediátrica'),
+            ...tagged(d.rows_interA || [], 'C. Intermedio Adulto'),
+            ...tagged(d.rows_interN || [], 'C. Intermedio Neonatal'),
+            ...tagged(d.rows_interP || [], 'C. Intermedio Pediátrico'),
+            ...tagged(d.rows_basN   || [], 'C. Básico Neonatal'),
+          ];
         }
         if (tab === 'mortalidad') {
           const d = CALCS.calcMortalidad(state.rows, f);
