@@ -686,7 +686,7 @@ const APP = (() => {
           </span>
         </h4>
         ${buildTable(rows,['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad',
-          'Fecha Ingreso','Fecha Egreso','Estancia','Servicio','Diagnostico','Estado del Egreso','Auditor'])}
+          'Fecha Ingreso','Fecha Egreso','Estancia','Diagnostico','Estado del Egreso','Auditor'])}
       </div>`;
 
     el.innerHTML = `${filterBar()}
