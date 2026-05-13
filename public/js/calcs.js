@@ -887,12 +887,13 @@ const CALCS = (() => {
 
     r.forEach(row => {
       const svc = get(row,'NOMBRE GENERAL DEL SERVICIO')||getPrimerServicio(row)||'Sin servicio';
-      if (!porServicio[svc]) porServicio[svc]={n:0,dias:0,pacientes:0};
+      if (!porServicio[svc]) porServicio[svc]={n:0,dias:0,pacientes:0,gestantes:0,gestantesDias:0};
       const dias = getEstDias(row);
       const pac  = getEstPacientes(row);
       porServicio[svc].n++;
       porServicio[svc].dias += dias;
       porServicio[svc].pacientes += pac;
+      if (isGestante(row)) { porServicio[svc].gestantes++; porServicio[svc].gestantesDias += dias; }
 
       const ips = get(row,'IPS')||get(row,'Razon Social')||get(row,'RAZON SOCIAL')||get(row,'IPS_NOMBRE')||'Sin IPS';
       if (!porIps[ips]) porIps[ips]={n:0,dias:0,pacientes:0,gestantes:0,gestantesDias:0};
