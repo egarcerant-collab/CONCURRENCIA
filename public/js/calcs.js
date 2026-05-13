@@ -331,8 +331,10 @@ const CALCS = (() => {
     const fallPediat    = fallecidos.filter(row => { const e=safeNum(get(row,'Edad')); return e>=0 && e<18; });
     const fallAdultos   = fallecidos.filter(row => safeNum(get(row,'Edad')) >= 18);
 
-    // DNT + muerte
-    const fallDNT       = fallecidos.filter(isDNT);
+    // DNT + muerte — clasificados por edad
+    const fallDNT          = fallecidos.filter(isDNT);
+    const fallDNTMenores5  = fallDNT.filter(row => safeNum(get(row,'Edad')) < 5);
+    const fallDNTMayores5  = fallDNT.filter(row => safeNum(get(row,'Edad')) >= 6);
 
     // Maternos (gestantes fallecidas)
     const fallMaternos  = fallecidos.filter(isGestante);
@@ -389,9 +391,13 @@ const CALCS = (() => {
       tasaPediat: divide(fallPediat.length, r.filter(row=>safeNum(get(row,'Edad'))<18).length),
       fallAdultos: fallAdultos.length,
       tasaAdultos: divide(fallAdultos.length, r.filter(row=>safeNum(get(row,'Edad'))>=18).length),
-      // DNT
+      // DNT — total y por rango de edad
       fallDNT: fallDNT.length,
       tasaDNT: divide(fallDNT.length, r.filter(isDNT).length),
+      fallDNTMenores5: fallDNTMenores5.length,
+      fallDNTMayores5: fallDNTMayores5.length,
+      tasaDNTMenores5: divide(fallDNTMenores5.length, r.filter(row=>isDNT(row)&&safeNum(get(row,'Edad'))<5).length),
+      tasaDNTMayores5: divide(fallDNTMayores5.length, r.filter(row=>isDNT(row)&&safeNum(get(row,'Edad'))>=6).length),
       // Materno
       fallMaternos: fallMaternos.length,
       tasaMaternos: divide(fallMaternos.length, r.filter(isGestante).length),
@@ -402,7 +408,7 @@ const CALCS = (() => {
       rowsUCINeonatal: fallUCINeonatal,
       rows48h: fall48h,
       rowsMenores5: fallMenores5,
-      rowsDNT: fallDNT,
+      rowsDNT: fallDNT, rowsDNTMenores5: fallDNTMenores5, rowsDNTMayores5: fallDNTMayores5,
       rowsMaternos: fallMaternos,
     };
   }

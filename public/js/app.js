@@ -975,14 +975,34 @@ const APP = (() => {
       </div>
 
       <!-- SECCIÓN 3: Mortalidad por Desnutrición -->
-      ${d.fallDNT > 0 ? `
-      <div style="background:#fdecea;border-left:4px solid #8e44ad;border-radius:8px;padding:8px 14px;margin:16px 0 10px">
+      <div style="background:#f5eef8;border-left:4px solid #8e44ad;border-radius:8px;padding:8px 14px;margin:16px 0 10px">
         <b style="color:#6c3483">🍽️ MORTALIDAD POR DESNUTRICIÓN (DNT)</b>
+        <span style="font-size:11px;color:#7d6608;margin-left:8px">CIE-10: E40–E46 / Programa Riesgo: Alteraciones Nutricionales</span>
       </div>
       <div class="kpi-grid">
         ${kpi('Fallecidos con DNT', fmtN(d.fallDNT), 'pac.',
-          `${fmt(d.tasaDNT)}% de pacientes DNT`, 'red', '🍽️',
-          'Pacientes con diagnóstico de desnutrición (E40-E46) cuyo egreso fue fallecido.')}
+          `${fmt(d.tasaDNT)}% de pacientes DNT`, d.fallDNT > 0 ? 'red' : 'green', '🍽️',
+          'Total fallecidos con diagnóstico de desnutrición (E40-E46) — todas las edades.')}
+        ${kpi('DNT Fallecidos < 5 años', fmtN(d.fallDNTMenores5), 'pac.',
+          `${fmt(d.tasaDNTMenores5)}% de DNT <5a`, d.fallDNTMenores5 > 0 ? 'red' : 'green', '👶',
+          'Fallecidos con desnutrición en niños menores de 5 años.\nIndicador crítico de mortalidad infantil por DNT.')}
+        ${kpi('DNT Fallecidos ≥ 6 años', fmtN(d.fallDNTMayores5), 'pac.',
+          `${fmt(d.tasaDNTMayores5)}% de DNT ≥6a`, d.fallDNTMayores5 > 0 ? 'orange' : 'green', '🧑',
+          'Fallecidos con desnutrición en pacientes de 6 años en adelante (incluye adultos).')}
+      </div>
+      ${d.rowsDNTMenores5 && d.rowsDNTMenores5.length ? `
+      <div class="data-table-wrap" style="margin-top:10px;border:2px solid #8e44ad;border-radius:10px">
+        <h4 style="color:#6c3483;padding:10px 14px 0">👶 Fallecidos DNT &lt; 5 años (${fmtN(d.rowsDNTMenores5.length)})</h4>
+        ${buildTable(d.rowsDNTMenores5,
+          ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
+           'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'])}
+      </div>` : ''}
+      ${d.rowsDNTMayores5 && d.rowsDNTMayores5.length ? `
+      <div class="data-table-wrap" style="margin-top:10px;border:2px solid #6c3483;border-radius:10px">
+        <h4 style="color:#4a235a;padding:10px 14px 0">🧑 Fallecidos DNT ≥ 6 años (${fmtN(d.rowsDNTMayores5.length)})</h4>
+        ${buildTable(d.rowsDNTMayores5,
+          ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
+           'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'])}
       </div>` : ''}
 
       <!-- Tabla resumen por IPS -->
@@ -1062,9 +1082,12 @@ const APP = (() => {
 
       // Tipos de mortalidad (barras comparativas)
       if (document.getElementById('ch-mort-tipos')) {
-        const tipoLabels = ['General','UCI Adulto','UCI Neonatal','UCI Pediátrica','< 48h','< 5 años','Adultos','DNT'];
+        const tipoLabels = ['General','UCI Adulto','UCI Neonatal','UCI Pediátrica',
+                            '< 48h','< 5 años','Adultos',
+                            'DNT Total','DNT < 5a','DNT ≥ 6a'];
         const tipoVals   = [d.fallecidos, d.fallUCIAdulto, d.fallUCINeonatal, d.fallUCIPediat,
-                            d.fall48h, d.fallMenores5, d.fallAdultos, d.fallDNT];
+                            d.fall48h, d.fallMenores5, d.fallAdultos,
+                            d.fallDNT, d.fallDNTMenores5, d.fallDNTMayores5];
         CHARTS.barras('ch-mort-tipos', tipoLabels, tipoVals, 'Fallecidos', '#c0392b');
       }
     }, 50);
@@ -1105,49 +1128,34 @@ const APP = (() => {
     const d = CALCS.calcDNT(state.rows, state.filters);
     const dntSivigila = state.dntRows.length;
 
-    // Tabla por IPS con fallecidos
-    const ipsEntries = Object.entries(d.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias);
+    // Tabla por IPS — solo pacientes y estancia (las muertes van en Mortalidad)
+    const ipsEntries = Object.entries(d.porIps)
+      .filter(([,v]) => v.coincidencias > 0)
+      .sort((a,b) => b[1].coincidencias - a[1].coincidencias);
     const ipsTableRows = ipsEntries.map(([ips,v]) => {
-      const pct = v.coincidencias > 0 ? ((v.fallecidos/v.coincidencias)*100).toFixed(1) : '0.0';
       const prom = v.coincidencias > 0 ? (v.diasEst/v.coincidencias).toFixed(1) : '0.0';
-      const col = parseFloat(pct) > 15 ? '#e74c3c' : parseFloat(pct) > 5 ? '#e67e22' : '#27ae60';
       return `<tr>
         <td>${ips}</td>
-        <td style="text-align:center">${fmtN(v.coincidencias)}</td>
-        <td style="text-align:center;font-weight:700;color:#e74c3c">${fmtN(v.fallecidos)}</td>
-        <td style="text-align:center;font-weight:700;color:${col}">${pct}%</td>
+        <td style="text-align:center;font-weight:700">${fmtN(v.coincidencias)}</td>
+        <td style="text-align:center">${fmtN(v.diasEst)}</td>
         <td style="text-align:center">${prom} días</td>
       </tr>`;
     }).join('');
-    const totPct = d.dnt > 0 ? ((d.fallecidosDNT/d.dnt)*100).toFixed(1) : '0.0';
 
-    // Valores únicos de Estado del Egreso en pacientes DNT (para diagnóstico)
-    const egresosUnicos = [...new Set(d.rows.map(r => String(r['Estado del Egreso']||r['Estado']||'(vacío)')))].sort();
-
-    // Fallecidos por grupo edad
-    const edadFallLabels = Object.keys(d.fallPorEdad||{});
-    const edadFallVals   = edadFallLabels.map(k=>d.fallPorEdad[k]);
-    // DNT por grupo edad
+    // DNT por grupo de edad
     const edadLabels = Object.keys(d.porEdad||{});
-    const edadTotals = edadLabels.map(k=>d.porEdad[k]);
-    const edadFalls  = edadLabels.map(k=>(d.fallPorEdad||{})[k]||0);
-    const edadActivos= edadTotals.map((t,i)=>t-edadFalls[i]);
 
     el.innerHTML = `${filterBar()}
-      <!-- KPIs principales -->
+      <div style="background:#f5eef8;border-left:4px solid #8e44ad;border-radius:8px;padding:6px 14px;margin-bottom:10px;font-size:12px">
+        💡 Las <b>muertes por desnutrición</b> se clasifican en el módulo <b>⚕️ Mortalidad → Sección DNT</b>
+      </div>
       <div class="kpi-grid">
-        ${kpi('Con DNT (Auditoría)', fmtN(d.dnt), '', `de ${fmtN(d.total)} hospitalizados`, 'red', '🍽️',
+        ${kpi('Con DNT (Auditoría)', fmtN(d.dnt), '',
+          `de ${fmtN(d.total)} hospitalizados`, 'red', '🍽️',
           'Pacientes con diagnóstico de desnutrición (CIE-10: E40-E46) o campo Programa Riesgo.')}
-        ${kpi('Tasa DNT', d.tasaDNT, '%', `de ${fmtN(d.total)} pacientes`,
-          semColor(d.tasaDNT, 85), '📊',
+        ${kpi('Tasa DNT', d.tasaDNT, '%',
+          `de ${fmtN(d.total)} pacientes`, semColor(d.tasaDNT, 85), '📊',
           'Fórmula: (Pacientes con DNT ÷ Total Hospitalizados) × 100\nMeta: ≤ 85%.')}
-        ${kpi('Fallecidos con DNT', fmtN(d.fallecidosDNT), 'pacientes',
-          `${totPct}% de mortalidad DNT`, d.fallecidosDNT > 0 ? 'red' : 'green', '💔',
-          'Pacientes con desnutrición cuyo Estado del Egreso registra fallecido/muerto.')}
-        ${kpi('Mortalidad DNT', d.tasaMortalidadDNT, '%',
-          `${fmtN(d.fallecidosDNT)} fallecidos / ${fmtN(d.dnt)} DNT`,
-          d.tasaMortalidadDNT > 10 ? 'red' : d.tasaMortalidadDNT > 5 ? 'orange' : 'green',
-          '📉', 'Fórmula: (Fallecidos con DNT ÷ Pacientes DNT) × 100.')}
         ${kpi('Estancia Prom. DNT', d.promedioEstancia, 'días',
           `Σ ${fmtN(d.diasTotales)} días totales`, 'blue', '🛏️',
           'Promedio de días de hospitalización de los pacientes con desnutrición.')}
@@ -1156,34 +1164,22 @@ const APP = (() => {
           'Fuente: archivo Seguimiento DNT (SIVIGILA). Registros de notificación obligatoria.') : ''}
       </div>
 
-      <!-- Panel diagnóstico Estado del Egreso -->
-      ${d.dnt > 0 ? `<div style="background:#f0f4f8;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#444;border-left:4px solid #1a4f7a">
-        🔍 <b>Valores de "Estado del Egreso" en pacientes DNT:</b>
-        ${egresosUnicos.map(v => {
-          const esMuerte = /fallecid|muert|obito|deceso|exitus/i.test(v);
-          return `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;border-radius:10px;background:${esMuerte?'#fde8e8':'#e8f4e8'};color:${esMuerte?'#c0392b':'#27ae60'};font-weight:${esMuerte?700:400}">${v}</span>`;
-        }).join('')}
-        ${d.fallecidosDNT === 0 && d.dnt > 0 ? `<br><span style="color:#e67e22;font-weight:700">⚠️ Ningún valor coincide con los patrones de muerte (fallecid/muert/obito/deceso/exitus). Verifica los valores en rojo.</span>` : ''}
-      </div>` : ''}
-
-      <!-- Tabla resumen por IPS -->
+      <!-- Tabla por IPS -->
       ${ipsEntries.length ? `
       <div class="data-table-wrap" style="margin-bottom:20px">
-        <h4 style="color:#c0392b">🏥 Desnutrición por IPS — Mortalidad y Estancia</h4>
+        <h4>🏥 Desnutrición por IPS</h4>
         <div class="table-scroll"><table>
           <thead><tr>
             <th>IPS</th>
             <th style="text-align:center">Pac. DNT</th>
-            <th style="text-align:center">Fallecidos</th>
-            <th style="text-align:center">% Mortalidad</th>
+            <th style="text-align:center">Días Totales</th>
             <th style="text-align:center">Estancia Prom.</th>
           </tr></thead>
           <tbody>${ipsTableRows}
-            <tr style="background:#ffeaea;font-weight:700">
+            <tr style="background:#f5eef8;font-weight:700">
               <td><b>Total</b></td>
               <td style="text-align:center">${fmtN(d.dnt)}</td>
-              <td style="text-align:center;color:#e74c3c">${fmtN(d.fallecidosDNT)}</td>
-              <td style="text-align:center;color:${parseFloat(totPct)>10?'#e74c3c':'#27ae60'}">${totPct}%</td>
+              <td style="text-align:center">${fmtN(d.diasTotales)}</td>
               <td style="text-align:center">${d.dnt>0?(d.diasTotales/d.dnt).toFixed(1):0} días</td>
             </tr>
           </tbody>
@@ -1192,52 +1188,31 @@ const APP = (() => {
 
       <!-- Gráficas -->
       <div class="chart-grid">
-        <div class="chart-card">
-          <h4>DNT por IPS — Pacientes vs Fallecidos</h4>
-          <canvas id="ch-dnt-ips" height="260"></canvas>
-        </div>
+        <div class="chart-card"><h4>DNT por IPS</h4><canvas id="ch-dnt-ips" height="260"></canvas></div>
         ${edadLabels.length ? `<div class="chart-card">
-          <h4>DNT por Grupo de Edad — Activos vs Fallecidos</h4>
+          <h4>DNT por Grupo de Edad</h4>
           <canvas id="ch-dnt-edad" height="260"></canvas>
         </div>` : ''}
       </div>
 
-      <!-- Fallecidos con DNT -->
-      ${d.rowsFallecidos && d.rowsFallecidos.length ? `
-      <div class="data-table-wrap" style="margin-bottom:20px;border:2px solid #e74c3c;border-radius:10px">
-        <h4 style="color:#e74c3c;padding:10px 14px 0">💔 Fallecidos con Desnutrición (${fmtN(d.rowsFallecidos.length)} pacientes)</h4>
-        ${buildTable(d.rowsFallecidos,
-          ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
-           'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'], 200)}
-      </div>` : ''}
-
-      <!-- Listado general DNT -->
+      <!-- Listado DNT -->
       <div class="data-table-wrap">
         <h4>Listado General DNT (${fmtN(d.dnt)} pacientes)</h4>
         ${buildTable(d.rows,
           ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
            'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'])}
       </div>
-
       ${dntSivigila ? `<div class="data-table-wrap" style="margin-top:16px">
         <h4>SIVIGILA — Seguimiento DNT (${fmtN(dntSivigila)} registros)</h4>
         ${buildTable(state.dntRows,null,100)}
       </div>` : ''}`;
 
     setTimeout(() => {
-      // Gráfica IPS: barras agrupadas Pacientes vs Fallecidos
       const top = ipsEntries.slice(0, 15);
-      const ipsLabels = top.map(x => x[0]);
-      const ipsPac    = top.map(x => x[1].coincidencias);
-      const ipsFall   = top.map(x => x[1].fallecidos || 0);
-      CHARTS.barrasDoble('ch-dnt-ips', ipsLabels, ipsPac, ipsFall,
-        'Pacientes DNT', 'Fallecidos', '#e67e22', '#e74c3c');
-
-      // Gráfica edad: barras apiladas Activos + Fallecidos
+      CHARTS.barras('ch-dnt-ips', top.map(x=>x[0]), top.map(x=>x[1].coincidencias), 'Pac. DNT', '#8e44ad');
       if (edadLabels.length && document.getElementById('ch-dnt-edad')) {
-        CHARTS.barrasApiladas('ch-dnt-edad', edadLabels,
-          [{ label:'Activos', data: edadActivos, color:'#e67e22' },
-           { label:'Fallecidos', data: edadFalls, color:'#e74c3c' }]);
+        CHARTS.barras('ch-dnt-edad', edadLabels,
+          edadLabels.map(k=>d.porEdad[k]), 'Pacientes DNT', '#8e44ad');
       }
     }, 50);
   }
