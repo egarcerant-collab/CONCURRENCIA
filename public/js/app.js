@@ -2283,16 +2283,79 @@ const APP = (() => {
     exportRN: (subgrupo) => {
       if (!state.rows.length) { toast('Sin datos cargados','error'); return; }
       const d = CALCS.calcRecienNacido(state.rows, state.filters);
-      const mapa = {
-        todos:      { rows: d.rows,          name: 'RN_General' },
-        bajopeso:   { rows: d.rowsBajoPeso,  name: 'RN_BajoPeso_P070_P071' },
-        congenitas: { rows: d.rowsCongenitas,name: 'RN_Congenitas' },
-        tamizaje:   { rows: d.rowsTamizaje,  name: 'RN_Tamizaje_Alterado' },
-        abiertos:   { rows: d.rowsAbiertos,  name: 'RN_Casos_Abiertos' },
-        fallecidos: { rows: d.rowsFallecidos,name: 'RN_Fallecidos' },
+
+      // Columnas base que TODOS los sub-grupos deben tener
+      const BASE_RN = ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion',
+        'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso'];
+
+      // Columnas específicas por sub-grupo (coinciden con lo que muestra la tabla en pantalla)
+      const COLS = {
+        todos: [...BASE_RN,'Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico',
+          'Cie10 Egreso','Servicio','Estancia','Programa Riesgo','Auditor',
+          'Observación Seguimiento','Criterio RN','Categorías RN'],
+        bajopeso:   [...BASE_RN,'Diagnostico','Cie10 Diagnostico','Estado del Egreso',
+          'Estancia','Observación Seguimiento','Criterio RN'],
+        congenitas: [...BASE_RN,'Diagnostico','Cie10 Diagnostico','Estado',
+          'Estado del Egreso','Estancia','Observación Seguimiento','Criterio RN'],
+        tamizaje:   [...BASE_RN,'Diagnostico','Cie10 Diagnostico','Estado',
+          'Estado del Egreso','Observación Seguimiento','Criterio RN'],
+        abiertos:   [...BASE_RN,'Fecha Ingreso','Diagnostico','Cie10 Diagnostico',
+          'Servicio','Estancia','Auditor','Observación Seguimiento','Criterio RN'],
+        fallecidos: [...BASE_RN,'Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
+          'Estado del Egreso','Estancia','Auditor','Observación Seguimiento','Criterio RN'],
       };
+
+      const mapa = {
+        todos:      { rows: d.rows,           name: 'RN_General_Res117_2026' },
+        bajopeso:   { rows: d.rowsBajoPeso,   name: 'RN_BajoPeso_P070_P071' },
+        congenitas: { rows: d.rowsCongenitas, name: 'RN_Malformaciones_Congenitas' },
+        tamizaje:   { rows: d.rowsTamizaje,   name: 'RN_Tamizaje_Neonatal_Alterado' },
+        abiertos:   { rows: d.rowsAbiertos,   name: 'RN_Casos_Abiertos_Seguimiento' },
+        fallecidos: { rows: d.rowsFallecidos, name: 'RN_Mortalidad_Neonatal' },
+      };
+
       const { rows, name } = mapa[subgrupo] || mapa.todos;
-      exportExcel(rows, name, ['IPS','Nombre Paciente','Numero Identificacion','Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Servicio','Estancia','Programa Riesgo','Auditor','Observación Seguimiento']);
+      const cols = COLS[subgrupo] || COLS.todos;
+
+      // Enriquecer filas con columnas calculadas
+      const enrich = rows.map(r => {
+        const o = {};
+        cols.forEach(c => { o[c] = CALCS.get(r, c) ?? ''; });
+        // Criterio RN: por qué fue identificado como recién nacido
+        const svcs = String(CALCS.get(r,'Servicio')||'').toLowerCase();
+        const cie  = String(CALCS.get(r,'Cie10 Diagnostico')||CALCS.get(r,'Diagnostico')||'').toLowerCase();
+        const edad = String(CALCS.get(r,'Edad')||'').toLowerCase();
+        const criterios = [];
+        if (/neonatal|neonat/i.test(svcs)) criterios.push('Servicio neonatal');
+        if (/^p\d/i.test(cie))             criterios.push('CIE-10 bloque P');
+        const mDias = edad.match(/^(\d+)\s*d[ií]a/i);
+        if (mDias && parseInt(mDias[1]) <= 28) criterios.push(`Edad ${mDias[1]} días`);
+        else if (/^0\s*mes/i.test(edad))   criterios.push('Edad 0 meses');
+        else if (/^0\s*a[ñn]/i.test(edad)) criterios.push('Edad 0 años');
+        o['Criterio RN'] = criterios.join(' + ') || 'CIE-10 P';
+
+        // Categorías RN (solo en todos)
+        if (subgrupo === 'todos' || !subgrupo) {
+          const diag = String(CALCS.get(r,'Cie10 Diagnostico')||CALCS.get(r,'Diagnostico')||'');
+          const cats = [];
+          if (/P070/i.test(diag)) cats.push('Peso Extrem. Bajo');
+          if (/P071/i.test(diag)) cats.push('Otro Peso Bajo');
+          if (/^[Qq]\d/i.test(diag)) cats.push('Congénita');
+          if (/P5[5-9]/i.test(diag)) cats.push('Ictericia');
+          if (/P3[5-9]/i.test(diag)) cats.push('Infección');
+          if (/P2[01]/i.test(diag))  cats.push('Asfixia');
+          if (/E00|E03|E70|E74|H90/i.test(diag)) cats.push('Tamizaje Alterado');
+          const estado = String(CALCS.get(r,'Estado')||'').toLowerCase();
+          const egreso = String(CALCS.get(r,'Estado del Egreso')||'').toLowerCase();
+          if (estado === 'abierto') cats.push('Caso Abierto');
+          if (/fallecid|muert/i.test(egreso)) cats.push('Fallecido');
+          o['Categorías RN'] = cats.join(' | ') || 'RN General';
+        }
+        return o;
+      });
+
+      if (!enrich.length) { toast('No hay registros en este subgrupo','error'); return; }
+      exportExcel(enrich, name, cols);
     },
     exportTab: () => {
       const tab = state.activeTab;
