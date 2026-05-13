@@ -394,12 +394,13 @@ const APP = (() => {
     const total = state.rows.length;
     const extra = (state.rcvRows.length?1:0)+(state.aiuRows.length?1:0)+
                   (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0);
-    // Mostrar botón Guardar en Supabase cuando hay datos cargados
-    const btnSupa = document.getElementById('btn-save-supa');
-    if (btnSupa) btnSupa.style.display = total > 0 ? 'inline-block' : 'none';
-    // (btn-save-cloud legacy — ocultar siempre)
+    // Ocultar siempre los botones de carga manual (se muestran solo en modo ?admin=1)
+    const btnSupa  = document.getElementById('btn-save-supa');
     const btnCloud = document.getElementById('btn-save-cloud');
+    const lblUp    = document.getElementById('lbl-upload-topbar');
+    if (btnSupa)  btnSupa.style.display  = 'none';
     if (btnCloud) btnCloud.style.display = 'none';
+    if (lblUp)    lblUp.style.display    = 'none';
     const el = document.getElementById('data-status');
     if (total > 0) {
       el.textContent = fmtN(total)+(extra>0?` +${extra} fuentes`:'');
@@ -493,17 +494,9 @@ const APP = (() => {
     const el = document.getElementById('tab-dashboard');
     if (!state.rows.length) {
       el.innerHTML = `<div class="no-data">
-        <div class="nd-icon">🏥</div>
-        <p>No hay datos cargados.<br>Descarga el Excel <b>Detallado Auditoria Hospitalaria</b> del sistema y súbelo aquí.</p>
-        <label style="cursor:pointer;display:inline-block;margin-top:16px">
-          <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
-          <span style="display:inline-flex;align-items:center;gap:8px;padding:14px 32px;background:#e67e22;color:#fff;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;border:2px solid #d35400">
-            📤 Subir Detallado Auditoria Hospitalaria
-          </span>
-        </label>
-        <div id="drive-log-box-dash" style="display:none">
-          <div id="drive-log-content-dash"></div>
-        </div>
+        <div class="nd-icon">☁️</div>
+        <p style="font-size:15px;color:#1a4f7a;font-weight:600">Cargando datos desde la nube…</p>
+        <p style="font-size:13px;color:#888">Los datos se sincronizan automáticamente cada día.<br>Si el problema persiste contacta al administrador del sistema.</p>
       </div>`;
       return;
     }
@@ -530,32 +523,20 @@ const APP = (() => {
 
     el.innerHTML = `
       ${filterBar()}
-      <!-- Banner estado Detallado -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:12px 16px;border-radius:10px;flex-wrap:wrap;${state.tipoReporte===1?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
-        <span style="font-size:20px">${state.tipoReporte===1?'✅':'⚠️'}</span>
+      <!-- Banner estado sincronización (solo informativo) -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 16px;border-radius:10px;flex-wrap:wrap;${state.tipoReporte===1?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
+        <span style="font-size:18px">${state.tipoReporte===1?'☁️✅':'☁️⚠️'}</span>
         <div style="flex:1;min-width:200px">
           <div style="font-weight:700;font-size:13px;color:${state.tipoReporte===1?'#2e7d32':'#e65100'}">
             ${state.tipoReporte===1
-              ? `Detallado Auditoria Hospitalaria — ${fmtN(state.rows.length)} registros`
-              : `Datos incompletos — ${fmtN(state.rows.length)} registros (no es el Detallado completo)`}
+              ? `Base de datos sincronizada — ${fmtN(state.rows.length)} registros`
+              : `Sincronización parcial — ${fmtN(state.rows.length)} registros`}
           </div>
-          <div style="font-size:11px;color:#555;margin-top:2px">
+          <div style="font-size:11px;color:#666;margin-top:2px">
             ${state.uploadedAt.detallado
-              ? `📅 Última subida: <b>${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b>`
-              : state.tipoReporte!==1 ? 'Sube el Excel <b>Detallado Auditoria Hospitalaria</b> descargado del sistema.' : ''}
+              ? `🕐 Última actualización: <b>${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b> · Sincronización automática diaria`
+              : 'Sincronización automática diaria desde el sistema hospitalario'}
           </div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <label style="cursor:pointer" title="Subir Excel DETALLADO_AUDITORIA_HOSPITALARIA del sistema hospitalario">
-            <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
-            <span style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;background:#e67e22;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #d35400;white-space:nowrap">
-              📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
-            </span>
-          </label>
-          <button onclick="APP.hospitalSync()"
-            style="padding:9px 18px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
-            ▶ Ejecutar descarga automática
-          </button>
         </div>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
@@ -1787,23 +1768,20 @@ const APP = (() => {
     }
 
     el.innerHTML = `
-      <!-- ── Panel Detallado Hospitalario ─────────────────── -->
-      <div id="drive-panel" class="upload-section" style="border:2px solid #e67e22;background:linear-gradient(135deg,#fff8f0,#fff)">
-        <h3 style="color:#d35400">🏥 Detallado Auditoria Hospitalaria</h3>
+      <!-- ── Panel Administración (solo modo admin) ─────────── -->
+      <div id="drive-panel" class="upload-section" style="border:2px solid #1a4f7a;background:linear-gradient(135deg,#e3f2fd,#fff)">
+        <h3 style="color:#1a4f7a">⚙️ Administración — Sincronización de Datos</h3>
         <p style="font-size:13px;color:#555;margin-bottom:14px">
-          Descarga el reporte <b>DETALLADO_AUDITORIA_HOSPITALARIA</b> del sistema hospitalario
-          (<a href="http://asdempleados.dusakawiepsi.com:8080/sie_dusakawi/pages/audit/auditoria_hospitalaria/auditoria_hospitalaria.xhtml" target="_blank" style="color:#e67e22;font-weight:600">abrir sistema ↗</a>)
-          y súbelo aquí. Los datos quedan guardados en la nube automáticamente.
+          Panel interno de administración. Los datos se actualizan automáticamente cada día desde el sistema hospitalario.<br>
+          Usa estas opciones solo si necesitas forzar una actualización manual.
         </p>
-        ${state.rows.length ? `
         <div style="padding:12px 16px;border-radius:8px;background:${state.tipoReporte===1?'#e8f5e9':'#fff3e0'};border:1px solid ${state.tipoReporte===1?'#a5d6a7':'#ff9800'};font-size:12px;margin-bottom:14px;color:#333">
-          ${state.tipoReporte===1
-            ? `✅ <b>Detallado cargado</b> — ${fmtN(state.rows.length)} registros${state.uploadedAt.detallado?' · '+new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}`
-            : `⚠️ Actualmente hay <b>${fmtN(state.rows.length)} registros</b> pero NO son el Detallado completo. Sube el archivo correcto.`}
-        </div>` : `
-        <div style="padding:12px 16px;border-radius:8px;background:#fff3e0;border:1px solid #ff9800;font-size:12px;margin-bottom:14px;color:#555">
-          ⚠️ No hay datos cargados. Sube el Excel para activar el dashboard.
-        </div>`}
+          ${state.rows.length
+            ? (state.tipoReporte===1
+                ? `☁️ ✅ <b>Base sincronizada</b> — ${fmtN(state.rows.length)} registros${state.uploadedAt.detallado?' · Actualizada: '+new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}`
+                : `☁️ ⚠️ <b>${fmtN(state.rows.length)} registros parciales</b> — No es el Detallado completo. Sube el archivo correcto.`)
+            : `⚠️ Sin datos. Ejecuta la descarga automática o sube el archivo manualmente.`}
+        </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <label style="cursor:pointer;display:inline-block">
             <input type="file" accept=".xlsx,.xls,.xlsm" onchange="APP.handleUpload(this)" style="display:none">
@@ -1815,9 +1793,10 @@ const APP = (() => {
             style="padding:11px 24px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
             ▶ Ejecutar descarga automática
           </button>
-        </div>
-        <div style="margin-top:10px;font-size:11px;color:#888">
-          <b>Subir:</b> manual, tú eliges el archivo · <b>Ejecutar:</b> intenta descargar directo del sistema hospitalario y subir a Supabase
+          <button onclick="APP.recargarNube()"
+            style="padding:11px 24px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+            🔄 Recargar desde Supabase
+          </button>
         </div>
         <div style="margin-top:10px">
           <button onclick="APP.recargarNube()" style="padding:8px 18px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
@@ -1888,6 +1867,11 @@ const APP = (() => {
 
   return {
     init: async () => {
+      // ── Modo Admin: ?admin=1 en la URL muestra el sidebar de Cargar Datos ──
+      const isAdmin = new URLSearchParams(window.location.search).get('admin') === '1';
+      const sidebarDatos = document.getElementById('sidebar-datos');
+      if (isAdmin && sidebarDatos) sidebarDatos.style.display = '';
+
       // Mostrar pantalla de carga mientras se busca en Supabase
       const tabDatos = document.getElementById('tab-datos');
       if (tabDatos) tabDatos.innerHTML = `
@@ -1898,7 +1882,7 @@ const APP = (() => {
         </div>
         <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
       await loadSaved();
-      navigate(state.rows.length ? 'dashboard' : 'datos');
+      navigate(state.rows.length ? 'dashboard' : 'dashboard');
     },
     navigate, render,
     // Recargar datos desde Supabase manualmente (para cuando el auto-load no funciona)
