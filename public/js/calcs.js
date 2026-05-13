@@ -368,18 +368,23 @@ const CALCS = (() => {
     // ── Tendencia mensual ─────────────────────────────────────
     const porMes = groupByMesFiltered(r, isMuerto);
 
+    // Denominadores UCI (egresos por tipo)
+    const nUCIAdulto   = r.filter(isUCIAdulto).length;
+    const nUCINeonatal = r.filter(isUCINeonatal).length;
+    const nUCIPediat   = r.filter(isUCIPediatrica).length;
+
     return {
       total: r.length,
       // General
       fallecidos: fallecidos.length,
       tasaMortalidad: divide(fallecidos.length, r.length, 1000),
-      // UCI
-      fallUCIAdulto: fallUCIAdulto.length,
-      tasaUCIAdulto: divide(fallUCIAdulto.length, r.filter(isUCIAdulto).length),
-      fallUCINeonatal: fallUCINeonatal.length,
-      tasaUCINeonatal: divide(fallUCINeonatal.length, r.filter(isUCINeonatal).length),
-      fallUCIPediat: fallUCIPediat.length,
-      tasaUCIPediat: divide(fallUCIPediat.length, r.filter(isUCIPediatrica).length),
+      // UCI — incluye denominadores para validar umbral estadístico
+      fallUCIAdulto: fallUCIAdulto.length,   nUCIAdulto,
+      tasaUCIAdulto: divide(fallUCIAdulto.length, nUCIAdulto),
+      fallUCINeonatal: fallUCINeonatal.length, nUCINeonatal,
+      tasaUCINeonatal: divide(fallUCINeonatal.length, nUCINeonatal),
+      fallUCIPediat: fallUCIPediat.length,   nUCIPediat,
+      tasaUCIPediat: divide(fallUCIPediat.length, nUCIPediat),
       fallUCI: fallUCI.length,
       // 48h
       fall48h: fall48h.length,

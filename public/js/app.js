@@ -955,23 +955,45 @@ const APP = (() => {
       <!-- SECCIÓN 2: Mortalidad UCI -->
       <div style="background:#fdecea;border-left:4px solid #c0392b;border-radius:8px;padding:8px 14px;margin:16px 0 10px">
         <b style="color:#922b21">🫀 MORTALIDAD EN UCI</b>
+        <span style="font-size:11px;color:#888;margin-left:8px">Tasa = (Fallecidos ÷ Egresos UCI) × 100 · mínimo 5 egresos para calcular tasa</span>
       </div>
       <div class="kpi-grid">
         ${kpi('Fallecidos UCI (Total)', fmtN(d.fallUCI), 'pac.',
           `de ${fmtN(d.fallecidos)} fallecidos totales`, 'red', '🫀',
           'Fallecidos en cualquier servicio de UCI (adulto + neonatal + pediátrica).')}
-        ${kpi('Mortalidad UCI Adulto', d.tasaUCIAdulto, '%',
-          `${fmtN(d.fallUCIAdulto)} fallecidos`,
-          semColor(d.tasaUCIAdulto, 15, false), '🏥',
-          'Fórmula: (Fallecidos UCI Adulto ÷ Hospitalizados UCI Adulto) × 100\nMeta: ≤ 15%.')}
-        ${kpi('Mortalidad UCI Neonatal', d.tasaUCINeonatal, '%',
-          `${fmtN(d.fallUCINeonatal)} fallecidos`,
-          semColor(d.tasaUCINeonatal, 20, false), '🍼',
-          'Fórmula: (Fallecidos UCI Neonatal ÷ Hospitalizados UCI Neonatal) × 100\nMeta: ≤ 20%.')}
-        ${kpi('Mortalidad UCI Pediátrica', d.tasaUCIPediat, '%',
-          `${fmtN(d.fallUCIPediat)} fallecidos`,
-          semColor(d.tasaUCIPediat, 15, false), '👧',
-          'Fórmula: (Fallecidos UCI Pediátrica ÷ Hospitalizados UCI Pediátrica) × 100\nMeta: ≤ 15%.')}
+        ${(() => {
+          const n = d.nUCIAdulto, f = d.fallUCIAdulto;
+          const valDisplay = n >= 5 ? d.tasaUCIAdulto : null;
+          const sub = n >= 5
+            ? `${fmtN(f)} fallecidos / ${fmtN(n)} egresos`
+            : `${fmtN(f)} fallecidos · n=${fmtN(n)} (insuf. para tasa)`;
+          return kpi('Mortalidad UCI Adulto',
+            valDisplay !== null ? valDisplay : '—', valDisplay !== null ? '%' : '',
+            sub, n >= 5 ? semColor(d.tasaUCIAdulto, 15, false) : 'blue', '🏥',
+            'Fórmula: (Fallecidos UCI Adulto ÷ Egresos UCI Adulto) × 100\nMeta: ≤ 15%\nMínimo 5 egresos para calcular tasa.');
+        })()}
+        ${(() => {
+          const n = d.nUCINeonatal, f = d.fallUCINeonatal;
+          const valDisplay = n >= 5 ? d.tasaUCINeonatal : null;
+          const sub = n >= 5
+            ? `${fmtN(f)} fallecidos / ${fmtN(n)} egresos`
+            : `${fmtN(f)} fallecidos · n=${fmtN(n)} (insuf. para tasa)`;
+          return kpi('Mortalidad UCI Neonatal',
+            valDisplay !== null ? valDisplay : '—', valDisplay !== null ? '%' : '',
+            sub, n >= 5 ? semColor(d.tasaUCINeonatal, 20, false) : 'blue', '🍼',
+            'Fórmula: (Fallecidos UCI Neonatal ÷ Egresos UCI Neonatal) × 100\nMeta: ≤ 20%\nMínimo 5 egresos para calcular tasa.');
+        })()}
+        ${(() => {
+          const n = d.nUCIPediat, f = d.fallUCIPediat;
+          const valDisplay = n >= 5 ? d.tasaUCIPediat : null;
+          const sub = n >= 5
+            ? `${fmtN(f)} fallecidos / ${fmtN(n)} egresos`
+            : `${fmtN(f)} fallecidos · n=${fmtN(n)} (insuf. para tasa)`;
+          return kpi('Mortalidad UCI Pediátrica',
+            valDisplay !== null ? valDisplay : '—', valDisplay !== null ? '%' : '',
+            sub, n >= 5 ? semColor(d.tasaUCIPediat, 15, false) : 'blue', '👧',
+            'Fórmula: (Fallecidos UCI Pediátrica ÷ Egresos UCI Pediátrica) × 100\nMeta: ≤ 15%\nMínimo 5 egresos para calcular tasa.');
+        })()}
       </div>
 
       <!-- SECCIÓN 3: Mortalidad por Desnutrición -->
