@@ -110,37 +110,37 @@ async function supaUpload(table, rows, fileName, meta = {}) {
   } catch(e) { console.warn('[Supabase SDK] exception:', e); return false; }
 }
 
-// ── Descargar desde Supabase Storage ─────────────────────────
+// ── Descargar desde Supabase Storage (siempre fresco, sin caché) ──
 async function supaDownload(table) {
-  // Intentar con fetch directo primero
+  // Cache-buster: cada descarga usa un timestamp único → el browser nunca sirve caché
+  const bust = `?t=${Date.now()}`;
   try {
     const res = await fetch(
-      `${SUPA_URL}/storage/v1/object/${BUCKET}/${table}.json`,
-      { headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } }
+      `${SUPA_URL}/storage/v1/object/${BUCKET}/${table}.json${bust}`,
+      {
+        headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY },
+        cache: 'no-store',          // ← no cachear en browser
+      }
     );
     if (res.ok) {
       const parsed = await res.json();
-      console.log(`[Supabase Direct] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
+      console.log(`[Supabase] ✅ ${table} — ${parsed.rows?.length||0} filas · ${new Date().toLocaleTimeString('es-CO')}`);
       return parsed;
     }
-    // Loguear el error para diagnóstico
     const errTxt = await res.text().catch(()=>'');
-    console.warn(`[Supabase Direct] ${table} → HTTP ${res.status}: ${errTxt.slice(0,150)}`);
+    console.warn(`[Supabase] ${table} → HTTP ${res.status}: ${errTxt.slice(0,150)}`);
   } catch(e) {
-    console.warn(`[Supabase Direct] ${table} → excepción:`, e.message);
+    console.warn(`[Supabase] ${table} → excepción:`, e.message);
   }
-  // Fallback: SDK de Supabase
+  // Fallback: SDK de Supabase (segunda vía)
   const client = getClient();
-  if (!client) {
-    console.warn('[Supabase SDK] SDK no disponible (window.supabase no cargado)');
-    return null;
-  }
+  if (!client) return null;
   try {
     const { data, error } = await client.storage.from(BUCKET).download(`${table}.json`);
     if (error) { console.warn(`[Supabase SDK] ${table} → error:`, error.message); return null; }
-    if (!data)  { console.warn(`[Supabase SDK] ${table} → sin datos`); return null; }
+    if (!data)  return null;
     const parsed = JSON.parse(await data.text());
-    console.log(`[Supabase SDK] ✅ ${table} restaurado (${parsed.rows?.length||0} filas)`);
+    console.log(`[Supabase SDK] ✅ ${table} — ${parsed.rows?.length||0} filas`);
     return parsed;
   } catch(e) {
     console.warn(`[Supabase SDK] ${table} → excepción:`, e.message);

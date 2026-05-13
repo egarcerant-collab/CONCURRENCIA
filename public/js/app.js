@@ -403,48 +403,54 @@ const APP = (() => {
     if (lblUp)    lblUp.style.display    = 'none';
     const el = document.getElementById('data-status');
     if (total > 0) {
-      el.textContent = fmtN(total)+(extra>0?` +${extra} fuentes`:'');
+      const hora = _lastSupaLoad ? new Date(_lastSupaLoad).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '';
+      el.innerHTML = fmtN(total)+(extra>0?` +${extra} fuentes`:'')+
+        (hora ? ` <span style="font-size:10px;opacity:.8">· ☁️ ${hora}</span>` : '');
       el.style.background = '#27ae60';
     }
   }
 
-  // Cargar datos guardados: Supabase (prioridad) → localStorage → servidor local
-  async function loadSaved() {
+  // ── Timestamp de la última carga desde Supabase ─────────────
+  let _lastSupaLoad = 0;
+  const REFRESH_MS = 30 * 60 * 1000; // 30 minutos
+
+  // Cargar datos SIEMPRE desde Supabase (fuente única y autoritativa)
+  // localStorage solo como último recurso si Supabase es inaccesible
+  async function loadSaved(silencioso = false) {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA'};
 
-    // Verificar servidor local (solo útil en localhost dev)
+    const hasSupa = !!window.SUPA_DB;
+    if (!silencioso) toast('☁️ Sincronizando con la nube...','info');
+
+    // Verificar servidor local (solo útil en localhost/dev)
     let servidorOk = false;
     try {
-      const r = await fetch('/api/tables', {signal: AbortSignal.timeout(1000)});
+      const r = await fetch('/api/tables', {signal: AbortSignal.timeout(800)});
       servidorOk = r.ok;
     } catch(e) {}
-
-    // Intentar Supabase SIEMPRE — es la fuente principal en Vercel
-    // NO usamos supaCheck() porque requiere admin; supaDownload maneja errores solo
-    const hasSupa = !!window.SUPA_DB;
-    if (hasSupa) toast('☁️ Cargando datos desde la nube...','info');
-
-    let supaRestoredMain = false;
 
     for (const [key, table] of Object.entries(tables)) {
       let d = null;
 
-      // 1. SUPABASE — fuente principal (persiste en Vercel, accesible desde cualquier lugar)
+      // 1. SUPABASE — fuente principal y única (siempre fresco, sin caché)
       if (hasSupa) {
         try { d = await window.SUPA_DB.supaDownload(table); } catch(e) {}
       }
 
-      // 2. localStorage — fallback por-dispositivo (si Supabase falla o no tiene datos)
+      // 2. Servidor local — solo en localhost/dev si Supabase no responde
+      if ((!d || !d.rows || !d.rows.length) && servidorOk) {
+        try { d = await fetch('/api/data/'+table, {cache:'no-store'}).then(r=>r.json()); } catch(e) {}
+      }
+
+      // 3. localStorage — SOLO emergencia total (sin red, sin servidor)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
-          if (raw) d = JSON.parse(raw);
+          if (raw) {
+            d = JSON.parse(raw);
+            if (d?.rows?.length) console.warn(`[loadSaved] ${table}: usando caché local (Supabase no disponible)`);
+          }
         } catch(e) {}
-      }
-
-      // 3. Servidor local — solo en localhost/dev
-      if ((!d || !d.rows || !d.rows.length) && servidorOk) {
-        try { d = await fetch('/api/data/'+table).then(r=>r.json()); } catch(e) {}
       }
 
       if (d && d.rows && d.rows.length) {
@@ -456,7 +462,8 @@ const APP = (() => {
           state.meta = CALCS.extractMeta(d.rows);
           if (d.tipoReporte != null) state.tipoReporte = d.tipoReporte;
           if (d.source != null) state.source = d.source;
-          supaRestoredMain = true;
+          // Guardar en localStorage como respaldo de emergencia
+          try { localStorage.setItem(LS_PREFIX+table, JSON.stringify(d)); } catch(e) {}
         }
       }
     }
@@ -465,12 +472,11 @@ const APP = (() => {
     try {
       let a = null;
       if (hasSupa) { try { a = await window.SUPA_DB.supaDownload('AUDITORES'); } catch(e) {} }
-      if (!a || !a.rows) {
-        const raw = localStorage.getItem(LS_PREFIX+'AUDITORES');
-        if (raw) a = JSON.parse(raw);
-      }
       if ((!a || !a.rows) && servidorOk) {
-        try { a = await fetch('/api/data/AUDITORES').then(r=>r.json()); } catch(e) {}
+        try { a = await fetch('/api/data/AUDITORES',{cache:'no-store'}).then(r=>r.json()); } catch(e) {}
+      }
+      if (!a || !a.rows) {
+        try { const raw = localStorage.getItem(LS_PREFIX+'AUDITORES'); if(raw) a=JSON.parse(raw); } catch(e) {}
       }
       if (a && a.rows && a.rows.length) {
         const map = {};
@@ -480,12 +486,37 @@ const APP = (() => {
       }
     } catch(e) {}
 
+    _lastSupaLoad = Date.now();
     updateStatusBar();
+
     if (state.rows.length) {
-      toast(`✅ ${fmtN(state.rows.length)} registros restaurados desde la nube ☁️`,'success');
+      const hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+      if (!silencioso) toast(`✅ ${fmtN(state.rows.length)} registros · Actualizado ${hora}`, 'success');
     } else {
-      toast('📂 No hay datos en la nube. Sube el Excel Detallado.','info');
+      if (!silencioso) toast('⚠️ Sin datos en la nube. Contacta al administrador.','info');
     }
+  }
+
+  // ── Auto-refresco cada 30 min + al volver a la pestaña ──────
+  function iniciarAutoRefresh() {
+    // Intervalo periódico de 30 minutos
+    setInterval(async () => {
+      console.log('[AutoRefresh] Refrescando datos desde Supabase...');
+      await loadSaved(true); // silencioso
+      render(); // repintar la pestaña activa con datos nuevos
+    }, REFRESH_MS);
+
+    // Al volver a la pestaña del navegador después de más de 5 min ausente
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        const ausente = Date.now() - _lastSupaLoad;
+        if (ausente > 5 * 60 * 1000) { // más de 5 minutos
+          console.log(`[AutoRefresh] Volvió a la pestaña tras ${Math.round(ausente/60000)} min — recargando...`);
+          await loadSaved(true);
+          render();
+        }
+      }
+    });
   }
 
   // ── TABS ─────────────────────────────────────────────────
@@ -1882,7 +1913,8 @@ const APP = (() => {
         </div>
         <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
       await loadSaved();
-      navigate(state.rows.length ? 'dashboard' : 'dashboard');
+      navigate('dashboard');
+      iniciarAutoRefresh(); // ← refresco cada 30 min + al volver a la pestaña
     },
     navigate, render,
     // Recargar datos desde Supabase manualmente (para cuando el auto-load no funciona)
