@@ -11,7 +11,8 @@ const APP = (() => {
     cydRows: [],      // cyd.csv — crecimiento y desarrollo 0-5
     estanciaRows: [], // ESTANCIA DETALLADA — estancia por servicio
     meta: { ips:[], anios:[], meses:[] },
-    filters: { ips:'todos', anio:'todos', mes:'todos', departamento:'todos', municipio:'todos' },
+    filters: { ips:'todos', anio:'todos', mes:'todos', meses:[], departamento:'todos', municipio:'todos' },
+    _mesOpen: false,   // estado del dropdown multi-mes
     auditoresMap: {},
     activeTab: 'datos',
     fileNames: {},
@@ -254,11 +255,37 @@ const APP = (() => {
         <option value="todos">Todos</option>
         ${anios.map(a=>`<option value="${a}" ${state.filters.anio===a?'selected':''}>${a}</option>`).join('')}
       </select>
-      <label>Mes:</label>
-      <select onchange="APP.setFilter('mes',this.value)">
-        <option value="todos">Todos</option>
-        ${Object.entries(MESES_ES).map(([k,v])=>`<option value="${k}" ${state.filters.mes===k?'selected':''}>${v}</option>`).join('')}
-      </select>
+      ${(() => {
+        const mesesSel = state.filters.meses || [];
+        const mesOpen  = state._mesOpen || false;
+        const mesBtnLabel = mesesSel.length === 0
+          ? 'Todos los meses'
+          : mesesSel.length === 1
+            ? (MESES_ES[mesesSel[0]] || mesesSel[0])
+            : `${mesesSel.length} meses ✓`;
+        const hasSel = mesesSel.length > 0;
+        return `<div style="position:relative;display:inline-flex;align-items:center;gap:4px">
+          <label style="margin:0">📅 Mes:</label>
+          <button id="mes-toggle-btn" onclick="APP.toggleMesDropdown(event)"
+            style="padding:5px 10px;border:1px solid ${hasSel?'#1a4f7a':'#d1dce8'};border-radius:8px;background:${hasSel?'#e8f0fe':'#fff'};cursor:pointer;font-size:12px;white-space:nowrap;color:${hasSel?'#1a4f7a':'#333'};font-weight:${hasSel?'600':'400'}">
+            ${mesBtnLabel} ▾
+          </button>
+          <div id="mes-panel" style="display:${mesOpen?'block':'none'};position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid #d1dce8;border-radius:10px;padding:6px 2px;z-index:500;min-width:170px;box-shadow:0 6px 24px rgba(0,0,0,.13)">
+            <div style="padding:4px 10px 6px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eef2f7;margin-bottom:4px">
+              <span style="font-size:11px;font-weight:700;color:#1a4f7a">Filtrar por mes</span>
+              ${hasSel?`<button onclick="APP.clearMeses()" style="font-size:10px;padding:2px 7px;border:1px solid #e74c3c;border-radius:5px;background:#fff5f5;color:#e74c3c;cursor:pointer">✕ Limpiar</button>`:''}
+            </div>
+            ${Object.entries(MESES_ES).map(([k,v])=>`
+              <label style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;border-radius:6px;font-size:12px"
+                onmouseover="this.style.background='#f0f4fa'" onmouseout="this.style.background=''">
+                <input type="checkbox" value="${k}" ${mesesSel.includes(k)?'checked':''}
+                  onchange="APP.toggleMes('${k}',this.checked)"
+                  style="width:14px;height:14px;accent-color:#1a4f7a;cursor:pointer;flex-shrink:0">
+                <span style="${mesesSel.includes(k)?'color:#1a4f7a;font-weight:700':'color:#333'}">${v}</span>
+              </label>`).join('')}
+          </div>
+        </div>`;
+      })()}
       <button class="btn btn-secondary btn-sm" onclick="APP.resetFilters()">↺ Limpiar</button>
       ${countBadge}
       <button class="btn btn-secondary btn-sm" onclick="APP.exportTab()" style="margin-left:8px;background:#27ae60;color:#fff;border-color:#27ae60">${exportLabel}</button>
@@ -2325,7 +2352,35 @@ const APP = (() => {
     },
     setFilter: (k,v) => { state.filters[k]=v; render(); },
     setFilterDpto: (v) => { state.filters.departamento=v; state.filters.municipio='todos'; render(); },
-    resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',departamento:'todos',municipio:'todos'}; render(); },
+    resetFilters: () => { state.filters={ips:'todos',anio:'todos',mes:'todos',meses:[],departamento:'todos',municipio:'todos'}; state._mesOpen=false; render(); },
+    toggleMesDropdown: (e) => {
+      if (e) { e.stopPropagation(); }
+      state._mesOpen = !state._mesOpen;
+      const panel = document.getElementById('mes-panel');
+      if (panel) panel.style.display = state._mesOpen ? 'block' : 'none';
+      if (state._mesOpen) {
+        const handler = (ev) => {
+          const p = document.getElementById('mes-panel');
+          const b = document.getElementById('mes-toggle-btn');
+          if (p && !p.contains(ev.target) && b && !b.contains(ev.target)) {
+            p.style.display = 'none';
+            state._mesOpen = false;
+            document.removeEventListener('click', handler);
+          }
+        };
+        setTimeout(() => document.addEventListener('click', handler), 20);
+      }
+    },
+    toggleMes: (k, checked) => {
+      const meses = [...(state.filters.meses||[])];
+      const key = String(k).padStart(2,'0');
+      if (checked) { if (!meses.includes(key)) meses.push(key); }
+      else { const idx = meses.indexOf(key); if (idx>-1) meses.splice(idx,1); }
+      state.filters.meses = meses;
+      state._mesOpen = true;   // mantener dropdown abierto tras seleccionar
+      render();
+    },
+    clearMeses: () => { state.filters.meses=[]; state._mesOpen=false; render(); },
     // ── Exportar UCI con selección de tipos ─────────────────
     // keys: arreglo de claves ['uciA','uciN',...] o null=lee checkboxes del DOM
     exportUCI: (keys) => {
@@ -2441,21 +2496,20 @@ const APP = (() => {
         else if (/^0\s*a[ñn]/i.test(edad)) criterios.push('Edad 0 años');
         o['Criterio RN'] = criterios.join(' + ') || 'CIE-10 P';
 
-        // Categorías RN (solo en todos)
+        // Categorías RN — usa matchCIE (mismo criterio que los KPIs del módulo)
         if (subgrupo === 'todos' || !subgrupo) {
-          const diag = String(CALCS.get(r,'Cie10 Diagnostico')||CALCS.get(r,'Diagnostico')||'');
           const cats = [];
-          if (/P070/i.test(diag)) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
-          if (/P071/i.test(diag)) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
-          if (/^[Qq]\d/i.test(diag))              cats.push('Malform. Congénitas');
-          if (/E00|E03|E70|E74|H90/i.test(diag))  cats.push('Tamizaje Alterado');
-          if (/P5[5-9]/i.test(diag))              cats.push('Ictericia Neonatal');
-          if (/P3[5-9]/i.test(diag))              cats.push('Infección Neonatal');
-          if (/P2[01]/i.test(diag))               cats.push('Asfixia Perinatal');
+          if (CALCS.matchCIE(r,['P070'])) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
+          if (CALCS.matchCIE(r,['P071'])) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
+          if (CALCS.matchCIE(r,[/^Q\d/]))              cats.push('Malform. Congénitas');
+          if (CALCS.matchCIE(r,['E00','E03','E70','E740','E743','H90'])) cats.push('Tamizaje Alterado');
+          if (CALCS.matchCIE(r,['P55','P56','P57','P58','P59']))         cats.push('Ictericia Neonatal');
+          if (CALCS.matchCIE(r,['P35','P36','P37','P38','P39']))         cats.push('Infección Neonatal');
+          if (CALCS.matchCIE(r,['P20','P21']))                           cats.push('Asfixia Perinatal');
           const estado = String(CALCS.get(r,'Estado')||'').toLowerCase();
           const egreso = String(CALCS.get(r,'Estado del Egreso')||'').toLowerCase();
-          if (estado === 'abierto')                cats.push('Casos Abiertos');
-          if (/fallecid|muert/i.test(egreso))      cats.push('Fallecidos Neonatales');
+          if (estado === 'abierto')             cats.push('Casos Abiertos');
+          if (/fallecid|muert/i.test(egreso))   cats.push('Fallecidos Neonatales');
           o['Categorías RN'] = cats.join(' | ') || 'RN General';
         }
         return o;
@@ -2670,15 +2724,15 @@ const APP = (() => {
             if (mD && parseInt(mD[1]) <= 28)   crit.push(`Edad ${mD[1]} días`);
             else if (/^0\s*mes/i.test(edad))   crit.push('Edad 0 meses');
             o['Criterio RN'] = crit.join(' + ') || 'CIE-10 P';
-            // Categorías RN — nombres exactos de las 10 categorías Res. 117/2026
+            // Categorías RN — usa matchCIE (mismo criterio que los KPIs del módulo)
             const cats = [];
-            if (/P070/i.test(cie)) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
-            if (/P071/i.test(cie)) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
-            if (/^Q\d/i.test(cie))              cats.push('Malform. Congénitas');
-            if (/E00|E03|E70|E74|H90/i.test(cie)) cats.push('Tamizaje Alterado');
-            if (/P5[5-9]/i.test(cie))           cats.push('Ictericia Neonatal');
-            if (/P3[5-9]/i.test(cie))           cats.push('Infección Neonatal');
-            if (/P2[01]/i.test(cie))            cats.push('Asfixia Perinatal');
+            if (CALCS.matchCIE(r,['P070'])) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
+            if (CALCS.matchCIE(r,['P071'])) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
+            if (CALCS.matchCIE(r,[/^Q\d/]))              cats.push('Malform. Congénitas');
+            if (CALCS.matchCIE(r,['E00','E03','E70','E740','E743','H90'])) cats.push('Tamizaje Alterado');
+            if (CALCS.matchCIE(r,['P55','P56','P57','P58','P59']))         cats.push('Ictericia Neonatal');
+            if (CALCS.matchCIE(r,['P35','P36','P37','P38','P39']))         cats.push('Infección Neonatal');
+            if (CALCS.matchCIE(r,['P20','P21']))                           cats.push('Asfixia Perinatal');
             if (String(CALCS.get(r,'Estado')||'').toLowerCase() === 'abierto') cats.push('Casos Abiertos');
             if (/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')||''))) cats.push('Fallecidos Neonatales');
             o['Categorías RN'] = cats.join(' | ') || 'RN General';

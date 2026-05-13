@@ -135,7 +135,17 @@ const CALCS = (() => {
         return f.includes(filters.anio);
       });
     }
-    if (filters.mes && filters.mes !== 'todos') {
+    // Filtro mes multi-selección (meses:['01','04',...]) — tiene prioridad sobre mes simple
+    if (filters.meses && Array.isArray(filters.meses) && filters.meses.length > 0) {
+      r = r.filter(row => {
+        const f = String(get(row,'Fecha Ingreso')||get(row,'fecha_solicitud')||'');
+        return filters.meses.some(m => {
+          const mp = String(m).padStart(2,'0');
+          return f.includes('/'+mp+'/') || f.includes('-'+mp+'-') || f.startsWith(mp+'/');
+        });
+      });
+    } else if (filters.mes && filters.mes !== 'todos') {
+      // compatibilidad con filtro mes simple
       const m = filters.mes.padStart(2,'0');
       r = r.filter(row => {
         const f = String(get(row,'Fecha Ingreso')||get(row,'fecha_solicitud')||'');
@@ -886,6 +896,7 @@ const CALCS = (() => {
 
   return {
     applyFilters, extractMeta, get, safeNum, divide, normStr: norm,
+    matchCIE,   // expuesto para uso en app.js (categorías RN y otros módulos)
     setAuditoresMap, nombreAuditor,
     getServicios, getPrimerServicio,
     calcResumen, calcHospitalizacion, calcUCI, calcMortalidad,
