@@ -262,5 +262,48 @@ const CHARTS = (() => {
     });
   }
 
-  return { barrasHospitalarios, barrasMortalidad, dona, barras, lineas, linea, barrasAgrupadas, barrasHoriz, gauge, barrasRiesgo, barrasSaludMental, fmt, fmtMoney, destroy, create };
+  // ── Barras dobles (2 datasets agrupados, e.g. Total vs Fallecidos) ──
+  function barrasDoble(id, labels, vals1, vals2, label1='Serie 1', label2='Serie 2', color1='#e67e22', color2='#e74c3c') {
+    return create(id, {
+      type: 'bar',
+      data: {
+        labels: labels.map(l => l.length > 20 ? l.substring(0,18)+'…' : l),
+        datasets: [
+          { label: label1, data: vals1, backgroundColor: color1, borderRadius: 4 },
+          { label: label2, data: vals2, backgroundColor: color2, borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+        scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  // ── Barras apiladas (múltiples datasets) ──
+  function barrasApiladas(id, labels, datasets) {
+    return create(id, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: datasets.map(ds => ({
+          label: ds.label,
+          data: ds.data,
+          backgroundColor: ds.color,
+          borderRadius: 3
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, ticks: { font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  return { barrasHospitalarios, barrasMortalidad, dona, barras, lineas, linea, barrasAgrupadas, barrasHoriz, gauge, barrasRiesgo, barrasSaludMental, barrasDoble, barrasApiladas, fmt, fmtMoney, destroy, create };
 })();

@@ -954,26 +954,130 @@ const APP = (() => {
     const el = document.getElementById('tab-desnutricion');
     if (!state.rows.length) { el.innerHTML = noData(); return; }
     const d = CALCS.calcDNT(state.rows, state.filters);
-    // Si hay datos DNT de SIVIGILA también mostramos
     const dntSivigila = state.dntRows.length;
+
+    // Tabla por IPS con fallecidos
+    const ipsEntries = Object.entries(d.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias);
+    const ipsTableRows = ipsEntries.map(([ips,v]) => {
+      const pct = v.coincidencias > 0 ? ((v.fallecidos/v.coincidencias)*100).toFixed(1) : '0.0';
+      const prom = v.coincidencias > 0 ? (v.diasEst/v.coincidencias).toFixed(1) : '0.0';
+      const col = parseFloat(pct) > 15 ? '#e74c3c' : parseFloat(pct) > 5 ? '#e67e22' : '#27ae60';
+      return `<tr>
+        <td>${ips}</td>
+        <td style="text-align:center">${fmtN(v.coincidencias)}</td>
+        <td style="text-align:center;font-weight:700;color:#e74c3c">${fmtN(v.fallecidos)}</td>
+        <td style="text-align:center;font-weight:700;color:${col}">${pct}%</td>
+        <td style="text-align:center">${prom} días</td>
+      </tr>`;
+    }).join('');
+    const totPct = d.dnt > 0 ? ((d.fallecidosDNT/d.dnt)*100).toFixed(1) : '0.0';
+
+    // Fallecidos por grupo edad
+    const edadFallLabels = Object.keys(d.fallPorEdad||{});
+    const edadFallVals   = edadFallLabels.map(k=>d.fallPorEdad[k]);
+    // DNT por grupo edad
+    const edadLabels = Object.keys(d.porEdad||{});
+    const edadTotals = edadLabels.map(k=>d.porEdad[k]);
+    const edadFalls  = edadLabels.map(k=>(d.fallPorEdad||{})[k]||0);
+    const edadActivos= edadTotals.map((t,i)=>t-edadFalls[i]);
+
     el.innerHTML = `${filterBar()}
+      <!-- KPIs principales -->
       <div class="kpi-grid">
-        ${kpi('Con DNT (Auditoría)',fmtN(d.dnt),'','','red','🍽️','Fuente: campo Programa Riesgo o Cie10 Diagnostico\nPacientes con diagnóstico de desnutrición (CIE-10: E40-E46).')}
-        ${kpi('Tasa DNT',d.tasaDNT,'%',`de ${fmtN(d.total)} pacientes`,semColor(d.tasaDNT,85),'📊','Fórmula: (Pacientes con DNT ÷ Total Hospitalizados) × 100\nMeta: ≤ 85% (indicador de detección).')}
-        ${dntSivigila ? kpi('SIVIGILA DNT',fmtN(dntSivigila),'registros','Cargados desde Seguimiento DNT','orange','📋','Fuente: archivo Seguimiento DNT (SIVIGILA)\nRegistros de notificación obligatoria de desnutrición.') : ''}
+        ${kpi('Con DNT (Auditoría)', fmtN(d.dnt), '', `de ${fmtN(d.total)} hospitalizados`, 'red', '🍽️',
+          'Pacientes con diagnóstico de desnutrición (CIE-10: E40-E46) o campo Programa Riesgo.')}
+        ${kpi('Tasa DNT', d.tasaDNT, '%', `de ${fmtN(d.total)} pacientes`,
+          semColor(d.tasaDNT, 85), '📊',
+          'Fórmula: (Pacientes con DNT ÷ Total Hospitalizados) × 100\nMeta: ≤ 85%.')}
+        ${kpi('Fallecidos con DNT', fmtN(d.fallecidosDNT), 'pacientes',
+          `${totPct}% de mortalidad DNT`, d.fallecidosDNT > 0 ? 'red' : 'green', '💔',
+          'Pacientes con desnutrición cuyo Estado del Egreso registra fallecido/muerto.')}
+        ${kpi('Mortalidad DNT', d.tasaMortalidadDNT, '%',
+          `${fmtN(d.fallecidosDNT)} fallecidos / ${fmtN(d.dnt)} DNT`,
+          d.tasaMortalidadDNT > 10 ? 'red' : d.tasaMortalidadDNT > 5 ? 'orange' : 'green',
+          '📉', 'Fórmula: (Fallecidos con DNT ÷ Pacientes DNT) × 100.')}
+        ${kpi('Estancia Prom. DNT', d.promedioEstancia, 'días',
+          `Σ ${fmtN(d.diasTotales)} días totales`, 'blue', '🛏️',
+          'Promedio de días de hospitalización de los pacientes con desnutrición.')}
+        ${dntSivigila ? kpi('SIVIGILA DNT', fmtN(dntSivigila), 'registros',
+          'Seguimiento DNT cargado', 'orange', '📋',
+          'Fuente: archivo Seguimiento DNT (SIVIGILA). Registros de notificación obligatoria.') : ''}
       </div>
+
+      <!-- Tabla resumen por IPS -->
+      ${ipsEntries.length ? `
+      <div class="data-table-wrap" style="margin-bottom:20px">
+        <h4 style="color:#c0392b">🏥 Desnutrición por IPS — Mortalidad y Estancia</h4>
+        <div class="table-scroll"><table>
+          <thead><tr>
+            <th>IPS</th>
+            <th style="text-align:center">Pac. DNT</th>
+            <th style="text-align:center">Fallecidos</th>
+            <th style="text-align:center">% Mortalidad</th>
+            <th style="text-align:center">Estancia Prom.</th>
+          </tr></thead>
+          <tbody>${ipsTableRows}
+            <tr style="background:#ffeaea;font-weight:700">
+              <td><b>Total</b></td>
+              <td style="text-align:center">${fmtN(d.dnt)}</td>
+              <td style="text-align:center;color:#e74c3c">${fmtN(d.fallecidosDNT)}</td>
+              <td style="text-align:center;color:${parseFloat(totPct)>10?'#e74c3c':'#27ae60'}">${totPct}%</td>
+              <td style="text-align:center">${d.dnt>0?(d.diasTotales/d.dnt).toFixed(1):0} días</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>` : ''}
+
+      <!-- Gráficas -->
       <div class="chart-grid">
-        <div class="chart-card" style="grid-column:1/-1"><h4>DNT por IPS</h4><canvas id="ch-dnt-ips" height="240"></canvas></div>
+        <div class="chart-card">
+          <h4>DNT por IPS — Pacientes vs Fallecidos</h4>
+          <canvas id="ch-dnt-ips" height="260"></canvas>
+        </div>
+        ${edadLabels.length ? `<div class="chart-card">
+          <h4>DNT por Grupo de Edad — Activos vs Fallecidos</h4>
+          <canvas id="ch-dnt-edad" height="260"></canvas>
+        </div>` : ''}
       </div>
-      <div class="data-table-wrap"><h4>Listado DNT</h4>
-        ${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico','Cie10 Diagnostico','Programa Riesgo','Estado del Egreso'])}
+
+      <!-- Fallecidos con DNT -->
+      ${d.rowsFallecidos && d.rowsFallecidos.length ? `
+      <div class="data-table-wrap" style="margin-bottom:20px;border:2px solid #e74c3c;border-radius:10px">
+        <h4 style="color:#e74c3c;padding:10px 14px 0">💔 Fallecidos con Desnutrición (${fmtN(d.rowsFallecidos.length)} pacientes)</h4>
+        ${buildTable(d.rowsFallecidos,
+          ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
+           'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'], 200)}
+      </div>` : ''}
+
+      <!-- Listado general DNT -->
+      <div class="data-table-wrap">
+        <h4>Listado General DNT (${fmtN(d.dnt)} pacientes)</h4>
+        ${buildTable(d.rows,
+          ['IPS','Nombre Paciente','Numero Identificacion','Edad','Diagnostico',
+           'Cie10 Diagnostico','Programa Riesgo','Estado del Egreso','Estancia'])}
       </div>
-      ${dntSivigila ? `<div class="data-table-wrap" style="margin-top:16px"><h4>SIVIGILA — Seguimiento DNT (${fmtN(dntSivigila)} registros)</h4>
-        ${buildTable(state.dntRows,null,100)}</div>` : ''}`;
-    setTimeout(()=>{
-      const top = Object.entries(d.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias).slice(0,15);
-      CHARTS.barras('ch-dnt-ips',top.map(x=>x[0]),top.map(x=>x[1].coincidencias),'Pacientes DNT','#e74c3c');
-    },50);
+
+      ${dntSivigila ? `<div class="data-table-wrap" style="margin-top:16px">
+        <h4>SIVIGILA — Seguimiento DNT (${fmtN(dntSivigila)} registros)</h4>
+        ${buildTable(state.dntRows,null,100)}
+      </div>` : ''}`;
+
+    setTimeout(() => {
+      // Gráfica IPS: barras agrupadas Pacientes vs Fallecidos
+      const top = ipsEntries.slice(0, 15);
+      const ipsLabels = top.map(x => x[0]);
+      const ipsPac    = top.map(x => x[1].coincidencias);
+      const ipsFall   = top.map(x => x[1].fallecidos || 0);
+      CHARTS.barrasDoble('ch-dnt-ips', ipsLabels, ipsPac, ipsFall,
+        'Pacientes DNT', 'Fallecidos', '#e67e22', '#e74c3c');
+
+      // Gráfica edad: barras apiladas Activos + Fallecidos
+      if (edadLabels.length && document.getElementById('ch-dnt-edad')) {
+        CHARTS.barrasApiladas('ch-dnt-edad', edadLabels,
+          [{ label:'Activos', data: edadActivos, color:'#e67e22' },
+           { label:'Fallecidos', data: edadFalls, color:'#e74c3c' }]);
+      }
+    }, 50);
   }
 
   function enfermedades() {
