@@ -122,79 +122,92 @@ const APP = (() => {
   }
 
   // ── FILTROS ──────────────────────────────────────────────
-  // ── IPS dinámicas según el módulo activo ─────────────────
-  // Aplica todos los filtros EXCEPTO IPS para mostrar solo las IPS con datos en ese módulo
-  function computeTabIPS() {
+  // ── IPS y conteo dinámicos según el módulo activo ────────
+  // Retorna { ips:[], count:N, label:'texto' }
+  // Aplica filtros sin IPS para lista IPS, con todos los filtros para el conteo
+  function computeTabData() {
     const tab = state.activeTab;
-    const f0 = {...state.filters, ips:'todos'}; // elimina filtro IPS temporalmente
-    try {
-      let rows = [];
-      if (tab === 'uci') {
-        const d = CALCS.calcUCI(state.rows, f0);
-        rows = [...(d.rows_uciA||[]),...(d.rows_uciN||[]),...(d.rows_uciP||[]),
-                ...(d.rows_interA||[]),...(d.rows_interN||[]),...(d.rows_interP||[]),...(d.rows_basN||[])];
-      } else if (tab === 'mortalidad') {
-        rows = CALCS.calcMortalidad(state.rows, f0).rows || [];
-      } else if (tab === 'hospitalizacion') {
-        rows = CALCS.calcHospitalizacion(state.rows, f0).rows || [];
-      } else if (tab === 'cesarea') {
-        const d = CALCS.calcCesareas(state.rows, f0);
-        rows = d.gestantesRows || d.rows || [];
-      } else if (tab === 'desnutricion') {
-        rows = CALCS.calcDNT(state.rows, f0).rows || [];
-      } else if (tab === 'saludmental') {
-        rows = CALCS.calcSaludMental(state.rows, f0).rows || [];
-      } else if (tab === 'rcv') {
-        rows = state.rcvRows.length ? state.rcvRows : CALCS.applyFilters(state.rows, f0);
-      } else if (tab === 'riamp') {
-        const d = CALCS.calcRIAMP(state.rows, f0);
-        rows = d.gestantesRows || d.rows || [];
-      } else if (tab === 'glosas') {
-        rows = CALCS.calcGlosas(state.rows, f0).rows || [];
-      } else if (tab === 'concurrencias') {
-        rows = CALCS.calcConcurrencias(state.rows, f0).rows || [];
-      } else if (tab === 'reingreso') {
-        rows = CALCS.calcReingreso(state.rows, f0).rows || [];
-      } else if (tab === 'eventos') {
-        rows = CALCS.calcEventos(state.rows, f0).rows || [];
-      } else if (tab === 'enfermedades') {
-        const d = CALCS.calcEnfermedades(state.rows, f0);
-        ['dengue','tuberculosis','vih','hematologicas','cancer','erc',
-         'leishmaniasis','chagas','malaria','zoonoticas','respiratorias'].forEach(k=>{
-          if (d[k]?.rows) rows.push(...d[k].rows);
-        });
-      } else if (tab === 'edaira') {
-        const dE = CALCS.calcEDA ? CALCS.calcEDA(state.rows, f0) : {rows:[]};
-        const dI = CALCS.calcIRA ? CALCS.calcIRA(state.rows, f0) : {rows:[]};
-        rows = [...(dE.rows||[]),...(dI.rows||[])];
-      } else if (tab === 'rn') {
-        rows = CALCS.calcRecienNacido(state.rows, f0).rows || [];
-      } else if (tab === 'ubicacion') {
-        const hoy = new Date(); hoy.setHours(0,0,0,0);
-        rows = CALCS.applyFilters(state.rows, f0).filter(r => {
-          if (!String(CALCS.get(r,'Estado')||'').toLowerCase().includes('abierto')) return false;
-          const fi = CALCS.get(r,'Fecha Ingreso'); if (!fi) return true;
-          const dd = new Date(fi); dd.setHours(0,0,0,0); return dd <= hoy;
-        });
-      } else if (tab === 'aiu') {
-        rows = state.aiuRows;
-      } else if (tab === 'estancia') {
-        rows = state.estanciaRows.length ? state.estanciaRows : CALCS.applyFilters(state.rows, f0);
-      } else {
-        rows = CALCS.applyFilters(state.rows, f0);
-      }
-      const lista = [...new Set(rows.map(r=>CALCS.get(r,'IPS')||'').filter(Boolean))].sort();
-      return lista.length ? lista : state.meta.ips;
-    } catch(e) {
-      return state.meta.ips; // fallback seguro
+    const f0  = {...state.filters, ips:'todos'}; // sin filtro IPS → para lista IPS
+    const f   = state.filters;                   // con todos los filtros → para conteo
+
+    // Etiquetas de módulo
+    const LABELS = {
+      uci:'UCI', mortalidad:'Fallecidos', hospitalizacion:'Hospitalizados',
+      cesarea:'Gestantes', desnutricion:'Con DNT', saludmental:'Salud Mental',
+      rcv:'RCV', riamp:'RIAMP', glosas:'Con Glosas', concurrencias:'Concurrencias',
+      reingreso:'Reingresos', eventos:'Eventos Adv.', enfermedades:'EISP',
+      edaira:'EDA/IRA', rn:'RN Cohorte', ubicacion:'Internados',
+      aiu:'AIU', estancia:'Estancia',
+    };
+
+    function getRows(filters) {
+      try {
+        if (tab === 'uci') {
+          const d = CALCS.calcUCI(state.rows, filters);
+          return [...(d.rows_uciA||[]),...(d.rows_uciN||[]),...(d.rows_uciP||[]),
+                  ...(d.rows_interA||[]),...(d.rows_interN||[]),...(d.rows_interP||[]),...(d.rows_basN||[])];
+        }
+        if (tab === 'mortalidad')     return CALCS.calcMortalidad(state.rows, filters).rows || [];
+        if (tab === 'hospitalizacion')return CALCS.calcHospitalizacion(state.rows, filters).rows || [];
+        if (tab === 'cesarea')        { const d=CALCS.calcCesareas(state.rows,filters); return d.gestantesRows||d.rows||[]; }
+        if (tab === 'desnutricion')   return CALCS.calcDNT(state.rows, filters).rows || [];
+        if (tab === 'saludmental')    return CALCS.calcSaludMental(state.rows, filters).rows || [];
+        if (tab === 'rcv')            return state.rcvRows.length ? state.rcvRows : CALCS.applyFilters(state.rows, filters);
+        if (tab === 'riamp')          { const d=CALCS.calcRIAMP(state.rows,filters); return d.gestantesRows||d.rows||[]; }
+        if (tab === 'glosas')         return CALCS.calcGlosas(state.rows, filters).rows || [];
+        if (tab === 'concurrencias')  return CALCS.calcConcurrencias(state.rows, filters).rows || [];
+        if (tab === 'reingreso')      return CALCS.calcReingreso(state.rows, filters).rows || [];
+        if (tab === 'eventos')        return CALCS.calcEventos(state.rows, filters).rows || [];
+        if (tab === 'enfermedades') {
+          const d = CALCS.calcEnfermedades(state.rows, filters); const r = [];
+          ['dengue','tuberculosis','vih','hematologicas','cancer','erc',
+           'leishmaniasis','chagas','malaria','zoonoticas','respiratorias'].forEach(k=>{ if(d[k]?.rows) r.push(...d[k].rows); });
+          return r;
+        }
+        if (tab === 'edaira') {
+          const dE = CALCS.calcEDA?.(state.rows, filters)||{rows:[]};
+          const dI = CALCS.calcIRA?.(state.rows, filters)||{rows:[]};
+          return [...(dE.rows||[]),...(dI.rows||[])];
+        }
+        if (tab === 'rn') {
+          const d = CALCS.calcRecienNacido(state.rows, filters);
+          const rnEl = document.getElementById('tab-rn');
+          const sub  = rnEl ? (rnEl.dataset.subtab||'resumen') : 'resumen';
+          const m = { resumen:d.rows, bajopeso:d.rowsBajoPeso, congenitas:d.rowsCongenitas,
+                      tamizaje:d.rowsTamizaje, abiertos:d.rowsAbiertos, fallecidos:d.rowsFallecidos };
+          return m[sub] || d.rows || [];
+        }
+        if (tab === 'ubicacion') {
+          const hoy = new Date(); hoy.setHours(0,0,0,0);
+          return CALCS.applyFilters(state.rows, filters).filter(r => {
+            if (!String(CALCS.get(r,'Estado')||'').toLowerCase().includes('abierto')) return false;
+            const fi = CALCS.get(r,'Fecha Ingreso'); if (!fi) return true;
+            const dd = new Date(fi); dd.setHours(0,0,0,0); return dd <= hoy;
+          });
+        }
+        if (tab === 'aiu')      return state.aiuRows;
+        if (tab === 'estancia') return state.estanciaRows.length ? state.estanciaRows : CALCS.applyFilters(state.rows, filters);
+        return CALCS.applyFilters(state.rows, filters);
+      } catch(e) { return CALCS.applyFilters(state.rows, filters); }
     }
+
+    const rowsForIPS   = getRows(f0); // sin filtro IPS → para lista desplegable
+    const rowsForCount = getRows(f);  // con todos los filtros → conteo real del módulo
+
+    const lista = [...new Set(rowsForIPS.map(r=>CALCS.get(r,'IPS')||'').filter(Boolean))].sort();
+    return {
+      ips:   lista.length ? lista : state.meta.ips,
+      count: rowsForCount.length,
+      label: LABELS[tab] || '',
+    };
   }
 
   function filterBar() {
     if (!state.rows.length) return '';
     const { anios, departamentos=[], municipios=[] } = state.meta;
-    // IPS dinámicas: solo las que tienen datos en el módulo actual
-    const ipsActivas = computeTabIPS();
+    // IPS y conteo dinámicos: solo las que tienen datos en el módulo activo
+    const tabData  = computeTabData(); // { ips:[], count:N, label:'texto' }
+    const ipsActivas = tabData.ips;
     // Si el filtro IPS activo no está en la lista dinámica, se mantiene para no perder la selección
     const ipsList = (state.filters.ips && state.filters.ips !== 'todos' && !ipsActivas.includes(state.filters.ips))
       ? [state.filters.ips, ...ipsActivas]
@@ -209,7 +222,15 @@ const APP = (() => {
         .filter(Boolean)
       )].sort();
     }
-    const count = CALCS.applyFilters(state.rows, state.filters).length;
+    // Conteo y etiqueta del módulo activo (no total de la BD)
+    const modCount = tabData.count;
+    const modLabel = tabData.label;
+    const exportLabel = modLabel
+      ? `⬇️ Exportar ${modLabel} (${fmtN(modCount)})`
+      : `⬇️ Exportar Excel (${fmtN(modCount)})`;
+    const countBadge = modLabel
+      ? `<span style="font-size:11px;color:#1a4f7a;font-weight:600;background:#e8f0fe;padding:3px 8px;border-radius:10px">${fmtN(modCount)} ${modLabel}</span>`
+      : `<span style="font-size:11px;color:#888">${fmtN(modCount)} registros</span>`;
     return `<div class="filter-bar">
       ${departamentos.length ? `
       <label>🗺️ Dpto:</label>
@@ -225,7 +246,7 @@ const APP = (() => {
       </select>` : ''}
       <label>🏥 IPS:</label>
       <select onchange="APP.setFilter('ips',this.value)">
-        <option value="todos">Todas las IPS <span style="color:#888">(${fmtN(ipsList.length)})</span></option>
+        <option value="todos">Todas las IPS (${fmtN(ipsList.length)})</option>
         ${ipsList.map(i=>`<option value="${i}" ${state.filters.ips===i?'selected':''}>${i}</option>`).join('')}
       </select>
       <label>📅 Año:</label>
@@ -239,8 +260,8 @@ const APP = (() => {
         ${Object.entries(MESES_ES).map(([k,v])=>`<option value="${k}" ${state.filters.mes===k?'selected':''}>${v}</option>`).join('')}
       </select>
       <button class="btn btn-secondary btn-sm" onclick="APP.resetFilters()">↺ Limpiar</button>
-      <span style="font-size:11px;color:#888">${fmtN(count)} registros</span>
-      <button class="btn btn-secondary btn-sm" onclick="APP.exportTab()" style="margin-left:8px;background:#27ae60;color:#fff;border-color:#27ae60">⬇️ Exportar Excel</button>
+      ${countBadge}
+      <button class="btn btn-secondary btn-sm" onclick="APP.exportTab()" style="margin-left:8px;background:#27ae60;color:#fff;border-color:#27ae60">${exportLabel}</button>
     </div>`;
   }
 
