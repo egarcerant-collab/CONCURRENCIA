@@ -2529,6 +2529,56 @@ const APP = (() => {
           });
         }
 
+        // ── Cohorte Recién Nacido (Res. 117/2026) ────────────
+        if (tab === 'rn') {
+          const d = CALCS.calcRecienNacido(state.rows, f);
+          // Determinar sub-tab activo para exportar el grupo correcto
+          const rnEl = document.getElementById('tab-rn');
+          const subTab = rnEl ? (rnEl.dataset.subtab || 'resumen') : 'resumen';
+          const RN_COLS = ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion',
+            'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso',
+            'Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
+            'Servicio','Estancia','Programa Riesgo','Auditor','Observación Seguimiento',
+            'Criterio RN','Categorías RN'];
+          const rnMapa = {
+            resumen:    d.rows,
+            bajopeso:   d.rowsBajoPeso,
+            congenitas: d.rowsCongenitas,
+            tamizaje:   d.rowsTamizaje,
+            abiertos:   d.rowsAbiertos,
+            fallecidos: d.rowsFallecidos,
+          };
+          const rnRows = rnMapa[subTab] || d.rows;
+          return rnRows.map(r => {
+            const o = {};
+            RN_COLS.slice(0, -2).forEach(c => { o[c] = CALCS.get(r, c) ?? ''; });
+            // Criterio RN
+            const svcs = String(CALCS.get(r,'Servicio')||'').toLowerCase();
+            const cie  = String(CALCS.get(r,'Cie10 Diagnostico')||CALCS.get(r,'Diagnostico')||'');
+            const edad = String(CALCS.get(r,'Edad')||'').toLowerCase();
+            const crit = [];
+            if (/neonatal|neonat/i.test(svcs)) crit.push('Servicio neonatal');
+            if (/^p\d/i.test(cie))             crit.push('CIE-10 bloque P');
+            const mD = edad.match(/^(\d+)\s*d[ií]a/i);
+            if (mD && parseInt(mD[1]) <= 28)   crit.push(`Edad ${mD[1]} días`);
+            else if (/^0\s*mes/i.test(edad))   crit.push('Edad 0 meses');
+            o['Criterio RN'] = crit.join(' + ') || 'CIE-10 P';
+            // Categorías
+            const cats = [];
+            if (/P070/i.test(cie))              cats.push('Peso Extrem. Bajo');
+            if (/P071/i.test(cie))              cats.push('Otro Peso Bajo');
+            if (/^Q\d/i.test(cie))              cats.push('Congénita');
+            if (/P5[5-9]/i.test(cie))           cats.push('Ictericia');
+            if (/P3[5-9]/i.test(cie))           cats.push('Infección');
+            if (/P2[01]/i.test(cie))            cats.push('Asfixia');
+            if (/E00|E03|E70|E74|H90/i.test(cie)) cats.push('Tamizaje Alterado');
+            if (String(CALCS.get(r,'Estado')||'').toLowerCase() === 'abierto') cats.push('Caso Abierto');
+            if (/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')||''))) cats.push('Fallecido');
+            o['Categorías RN'] = cats.join(' | ') || 'RN General';
+            return o;
+          });
+        }
+
         // dashboard / default: todos los registros filtrados
         return project(CALCS.applyFilters(state.rows, f));
       }
