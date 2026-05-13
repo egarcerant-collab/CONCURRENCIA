@@ -358,21 +358,46 @@ const CALCS = (() => {
     const isDNT = row =>
       /alteraciones.?nutricio/i.test(String(get(row,'Programa Riesgo'))) ||
       matchCIE(row, ['E40','E41','E42','E43','E44','E45','E46','E50','E63','E64']);
+    const isFallecido = row => /fallecid|muert|obito|deceso|exitus/i.test(String(get(row,'Estado del Egreso')||'') + '|' + String(get(row,'Estado')||''));
+
     const dnt = r.filter(isDNT);
-    const porIps = groupByIPSFiltered(r, isDNT);
+
+    // ── Mortalidad entre pacientes con DNT ──
+    const fallecidosDNT = dnt.filter(isFallecido);
+    const diasTotales   = dnt.reduce((a, row) => a + safeNum(get(row,'Estancia')), 0);
+    const promedioEstancia = dnt.length > 0 ? diasTotales / dnt.length : 0;
+
+    // ── Distribución por edad ──
     const porEdad = { '0-5':0,'6-11':0,'12-17':0,'18-59':0,'60+':0 };
+    const fallPorEdad = { '0-5':0,'6-11':0,'12-17':0,'18-59':0,'60+':0 };
     dnt.forEach(row => {
       const edad = safeNum(get(row,'Edad'));
-      if (edad<=5) porEdad['0-5']++;
-      else if (edad<=11) porEdad['6-11']++;
-      else if (edad<=17) porEdad['12-17']++;
-      else if (edad<=59) porEdad['18-59']++;
-      else porEdad['60+']++;
+      const grupo = edad<=5?'0-5':edad<=11?'6-11':edad<=17?'12-17':edad<=59?'18-59':'60+';
+      porEdad[grupo]++;
+      if (isFallecido(row)) fallPorEdad[grupo]++;
     });
+
+    // ── Por IPS: total + fallecidos ──
+    const porIps = {};
+    r.forEach(row => {
+      const ips = get(row,'IPS')||'Sin IPS';
+      if (!porIps[ips]) porIps[ips] = { total:0, coincidencias:0, fallecidos:0, diasEst:0 };
+      porIps[ips].total++;
+      if (isDNT(row)) {
+        porIps[ips].coincidencias++;
+        porIps[ips].diasEst += safeNum(get(row,'Estancia'));
+        if (isFallecido(row)) porIps[ips].fallecidos++;
+      }
+    });
+
     return {
       total: r.length, dnt: dnt.length,
       tasaDNT: divide(dnt.length, r.length),
-      porIps, porEdad, rows: dnt
+      fallecidosDNT: fallecidosDNT.length,
+      tasaMortalidadDNT: divide(fallecidosDNT.length, dnt.length),
+      diasTotales, promedioEstancia,
+      porIps, porEdad, fallPorEdad,
+      rows: dnt, rowsFallecidos: fallecidosDNT,
     };
   }
 

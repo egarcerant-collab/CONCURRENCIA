@@ -972,6 +972,9 @@ const APP = (() => {
     }).join('');
     const totPct = d.dnt > 0 ? ((d.fallecidosDNT/d.dnt)*100).toFixed(1) : '0.0';
 
+    // Valores únicos de Estado del Egreso en pacientes DNT (para diagnóstico)
+    const egresosUnicos = [...new Set(d.rows.map(r => String(r['Estado del Egreso']||r['Estado']||'(vacío)')))].sort();
+
     // Fallecidos por grupo edad
     const edadFallLabels = Object.keys(d.fallPorEdad||{});
     const edadFallVals   = edadFallLabels.map(k=>d.fallPorEdad[k]);
@@ -1003,6 +1006,16 @@ const APP = (() => {
           'Seguimiento DNT cargado', 'orange', '📋',
           'Fuente: archivo Seguimiento DNT (SIVIGILA). Registros de notificación obligatoria.') : ''}
       </div>
+
+      <!-- Panel diagnóstico Estado del Egreso -->
+      ${d.dnt > 0 ? `<div style="background:#f0f4f8;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#444;border-left:4px solid #1a4f7a">
+        🔍 <b>Valores de "Estado del Egreso" en pacientes DNT:</b>
+        ${egresosUnicos.map(v => {
+          const esMuerte = /fallecid|muert|obito|deceso|exitus/i.test(v);
+          return `<span style="display:inline-block;margin:2px 4px;padding:2px 8px;border-radius:10px;background:${esMuerte?'#fde8e8':'#e8f4e8'};color:${esMuerte?'#c0392b':'#27ae60'};font-weight:${esMuerte?700:400}">${v}</span>`;
+        }).join('')}
+        ${d.fallecidosDNT === 0 && d.dnt > 0 ? `<br><span style="color:#e67e22;font-weight:700">⚠️ Ningún valor coincide con los patrones de muerte (fallecid/muert/obito/deceso/exitus). Verifica los valores en rojo.</span>` : ''}
+      </div>` : ''}
 
       <!-- Tabla resumen por IPS -->
       ${ipsEntries.length ? `
