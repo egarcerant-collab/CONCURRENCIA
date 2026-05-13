@@ -2445,17 +2445,17 @@ const APP = (() => {
         if (subgrupo === 'todos' || !subgrupo) {
           const diag = String(CALCS.get(r,'Cie10 Diagnostico')||CALCS.get(r,'Diagnostico')||'');
           const cats = [];
-          if (/P070/i.test(diag)) cats.push('Peso Extrem. Bajo');
-          if (/P071/i.test(diag)) cats.push('Otro Peso Bajo');
-          if (/^[Qq]\d/i.test(diag)) cats.push('Congénita');
-          if (/P5[5-9]/i.test(diag)) cats.push('Ictericia');
-          if (/P3[5-9]/i.test(diag)) cats.push('Infección');
-          if (/P2[01]/i.test(diag))  cats.push('Asfixia');
-          if (/E00|E03|E70|E74|H90/i.test(diag)) cats.push('Tamizaje Alterado');
+          if (/P070/i.test(diag)) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
+          if (/P071/i.test(diag)) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
+          if (/^[Qq]\d/i.test(diag))              cats.push('Malform. Congénitas');
+          if (/E00|E03|E70|E74|H90/i.test(diag))  cats.push('Tamizaje Alterado');
+          if (/P5[5-9]/i.test(diag))              cats.push('Ictericia Neonatal');
+          if (/P3[5-9]/i.test(diag))              cats.push('Infección Neonatal');
+          if (/P2[01]/i.test(diag))               cats.push('Asfixia Perinatal');
           const estado = String(CALCS.get(r,'Estado')||'').toLowerCase();
           const egreso = String(CALCS.get(r,'Estado del Egreso')||'').toLowerCase();
-          if (estado === 'abierto') cats.push('Caso Abierto');
-          if (/fallecid|muert/i.test(egreso)) cats.push('Fallecido');
+          if (estado === 'abierto')                cats.push('Casos Abiertos');
+          if (/fallecid|muert/i.test(egreso))      cats.push('Fallecidos Neonatales');
           o['Categorías RN'] = cats.join(' | ') || 'RN General';
         }
         return o;
@@ -2670,17 +2670,17 @@ const APP = (() => {
             if (mD && parseInt(mD[1]) <= 28)   crit.push(`Edad ${mD[1]} días`);
             else if (/^0\s*mes/i.test(edad))   crit.push('Edad 0 meses');
             o['Criterio RN'] = crit.join(' + ') || 'CIE-10 P';
-            // Categorías
+            // Categorías RN — nombres exactos de las 10 categorías Res. 117/2026
             const cats = [];
-            if (/P070/i.test(cie))              cats.push('Peso Extrem. Bajo');
-            if (/P071/i.test(cie))              cats.push('Otro Peso Bajo');
-            if (/^Q\d/i.test(cie))              cats.push('Congénita');
-            if (/P5[5-9]/i.test(cie))           cats.push('Ictericia');
-            if (/P3[5-9]/i.test(cie))           cats.push('Infección');
-            if (/P2[01]/i.test(cie))            cats.push('Asfixia');
+            if (/P070/i.test(cie)) { cats.push('Bajo Peso al Nacer'); cats.push('Peso Extrem. Bajo (P070)'); }
+            if (/P071/i.test(cie)) { if (!cats.includes('Bajo Peso al Nacer')) cats.push('Bajo Peso al Nacer'); cats.push('Otro Peso Bajo (P071)'); }
+            if (/^Q\d/i.test(cie))              cats.push('Malform. Congénitas');
             if (/E00|E03|E70|E74|H90/i.test(cie)) cats.push('Tamizaje Alterado');
-            if (String(CALCS.get(r,'Estado')||'').toLowerCase() === 'abierto') cats.push('Caso Abierto');
-            if (/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')||''))) cats.push('Fallecido');
+            if (/P5[5-9]/i.test(cie))           cats.push('Ictericia Neonatal');
+            if (/P3[5-9]/i.test(cie))           cats.push('Infección Neonatal');
+            if (/P2[01]/i.test(cie))            cats.push('Asfixia Perinatal');
+            if (String(CALCS.get(r,'Estado')||'').toLowerCase() === 'abierto') cats.push('Casos Abiertos');
+            if (/fallecid|muert/i.test(String(CALCS.get(r,'Estado del Egreso')||''))) cats.push('Fallecidos Neonatales');
             o['Categorías RN'] = cats.join(' | ') || 'RN General';
             return o;
           });
