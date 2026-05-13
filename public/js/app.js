@@ -2143,28 +2143,90 @@ const APP = (() => {
     const fuenteInfo = state.estanciaRows.length
       ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:12px">🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros</div>`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
+    // Pacientes efectivos (usa DENOMINADOR si es sumario)
+    const pacLabel = d.hasSummary ? 'Pacientes (Σ Denominador)' : 'Total Pacientes';
+
+    // Tabla por IPS
+    const ipsRows = Object.entries(d.porIps)
+      .sort((a,b) => b[1].pacientes - a[1].pacientes)
+      .map(([ips,v]) => {
+        const prom = v.pacientes > 0 ? (v.dias/v.pacientes).toFixed(1) : '0.0';
+        const promGest = v.gestantes > 0 ? (v.gestantesDias/v.gestantes).toFixed(1) : '—';
+        const col = parseFloat(prom) > 10 ? '#e74c3c' : parseFloat(prom) > 7 ? '#e67e22' : '#27ae60';
+        return `<tr>
+          <td>${ips}</td>
+          <td style="text-align:center">${fmtN(v.pacientes||v.n)}</td>
+          <td style="text-align:center">${fmtN(v.dias)}</td>
+          <td style="text-align:center;font-weight:700;color:${col}">${prom}</td>
+          <td style="text-align:center;color:#8e44ad">${fmtN(v.gestantes)}</td>
+          <td style="text-align:center;color:#8e44ad">${promGest}</td>
+        </tr>`;
+      }).join('');
+
     el.innerHTML = `${filterBar()}${fuenteInfo}
       <div class="kpi-grid">
-        ${kpi('Total Registros',fmtN(d.total),'','','blue','🛏️')}
-        ${kpi('Días Totales',fmtN(d.diasTotal),'días','','teal','📅')}
-        ${kpi('Promedio Estancia',d.promedio,'días','','orange','📊')}
+        ${kpi(pacLabel, fmtN(d.pacientes), '', `${fmtN(d.total)} registros`, 'blue', '🛏️',
+          d.hasSummary
+            ? 'Suma del campo DENOMINADOR (pacientes por fila) — archivo en formato sumario.'
+            : 'Número de filas con registro de hospitalización.')}
+        ${kpi('Días Totales', fmtN(d.diasTotal), 'días', '', 'teal', '📅',
+          'Suma total de días de estancia de todos los registros.')}
+        ${kpi('Promedio Estancia', d.promedio, 'días',
+          `meta referencia: ≤ 7 días`,
+          d.promedio > 10 ? 'red' : d.promedio > 7 ? 'orange' : 'green', '📊',
+          'Fórmula: Días Totales ÷ Total Pacientes.')}
+        ${kpi('Gestantes', fmtN(d.gestantes), 'pac.',
+          `Estancia prom. ${fmt(d.gestantesPromedio)} días`, 'purple', '🤱',
+          'Pacientes con Gestación = Sí. Promedio de días de hospitalización de gestantes.')}
+        ${kpi('Días Gestantes', fmtN(d.gestantesDias), 'días',
+          `${d.pacientes>0?fmt(divide(d.gestantes,d.pacientes)):'0'}% del total`,
+          'purple', '🍼',
+          'Suma de días de estancia de pacientes gestantes.')}
       </div>
       <div class="chart-grid">
-        <div class="chart-card"><h4>Promedio por Servicio</h4><canvas id="ch-est-srv" height="280"></canvas></div>
-        <div class="chart-card"><h4>Por IPS (Top 15)</h4><canvas id="ch-est-ips" height="280"></canvas></div>
+        <div class="chart-card"><h4>Promedio Estancia por Servicio</h4><canvas id="ch-est-srv" height="280"></canvas></div>
+        <div class="chart-card"><h4>Promedio por IPS (Top 15)</h4><canvas id="ch-est-ips" height="280"></canvas></div>
       </div>
-      <div class="data-table-wrap"><h4>Por Servicio</h4>
-        <div class="table-scroll"><table><thead><tr><th>Servicio</th><th>Pacientes</th><th>Días Totales</th><th>Prom. Estancia</th></tr></thead>
-        <tbody>${Object.entries(d.porServicio).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`
-          <tr><td>${k}</td><td>${fmtN(v.n)}</td><td>${fmtN(v.dias)}</td>
-          <td><b>${fmt(v.n>0?v.dias/v.n:0)} días</b></td></tr>`).join('')}
-        </tbody></table></div>
+      <div class="data-table-wrap"><h4>Resumen por IPS — Estancia y Gestantes</h4>
+        <div class="table-scroll"><table>
+          <thead><tr>
+            <th>IPS</th>
+            <th style="text-align:center">Pacientes</th>
+            <th style="text-align:center">Días Totales</th>
+            <th style="text-align:center">Prom. Estancia</th>
+            <th style="text-align:center">Gestantes</th>
+            <th style="text-align:center">Prom. Gest.</th>
+          </tr></thead>
+          <tbody>${ipsRows}
+            <tr style="background:#f0f4f8;font-weight:700">
+              <td><b>Total</b></td>
+              <td style="text-align:center">${fmtN(d.pacientes)}</td>
+              <td style="text-align:center">${fmtN(d.diasTotal)}</td>
+              <td style="text-align:center">${fmt(d.promedio)} días</td>
+              <td style="text-align:center;color:#8e44ad">${fmtN(d.gestantes)}</td>
+              <td style="text-align:center;color:#8e44ad">${fmt(d.gestantesPromedio)} días</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="data-table-wrap" style="margin-top:16px"><h4>Por Servicio</h4>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Servicio</th><th style="text-align:center">Registros</th><th style="text-align:center">Días Totales</th><th style="text-align:center">Prom. Estancia</th></tr></thead>
+          <tbody>${Object.entries(d.porServicio).sort((a,b)=>b[1].pacientes-a[1].pacientes).map(([k,v])=>`
+            <tr><td>${k}</td><td style="text-align:center">${fmtN(v.pacientes||v.n)}</td><td style="text-align:center">${fmtN(v.dias)}</td>
+            <td style="text-align:center"><b>${fmt(v.pacientes>0?v.dias/v.pacientes:v.n>0?v.dias/v.n:0)} días</b></td></tr>`).join('')}
+          </tbody>
+        </table></div>
       </div>`;
     setTimeout(()=>{
       const topSrv = Object.entries(d.porServicio).sort((a,b)=>b[1].n-a[1].n).slice(0,12);
-      CHARTS.barras('ch-est-srv',topSrv.map(x=>x[0]),topSrv.map(x=>x[1].n>0?x[1].dias/x[1].n:0),'Prom. Días','#2980b9');
+      CHARTS.barras('ch-est-srv', topSrv.map(x=>x[0]),
+        topSrv.map(x=>{ const p=x[1].pacientes||x[1].n; return p>0?x[1].dias/p:0; }),
+        'Prom. Días','#2980b9');
       const topIps = Object.entries(d.porIps).sort((a,b)=>b[1].n-a[1].n).slice(0,15);
-      CHARTS.barras('ch-est-ips',topIps.map(x=>x[0]),topIps.map(x=>x[1].n>0?x[1].dias/x[1].n:0),'Prom. Días','#1a4f7a');
+      CHARTS.barras('ch-est-ips', topIps.map(x=>x[0]),
+        topIps.map(x=>{ const p=x[1].pacientes||x[1].n; return p>0?x[1].dias/p:0; }),
+        'Prom. Días','#1a4f7a');
     },50);
   }
 

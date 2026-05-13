@@ -815,11 +815,13 @@ const CALCS = (() => {
   // ── 19. ESTANCIA DETALLADA ───────────────────────────────
   // Candidatos para el campo de días — en orden de prioridad
   const _DIAS_COLS = [
-    'Estancia','NUMERADOR','DIAS','DÍAS','Dias','Días',
+    'Estancia','DIAS','DÍAS','Dias','Días',
     'TOTAL DIAS','TOTAL DÍAS','DIAS ESTANCIA','DÍAS ESTANCIA',
     'Días de Estancia','Dias de Estancia','dias_estancia',
     'ESTANCIA','Estancias','ESTANCIAS','Num Dias','NUM DIAS',
     'Días Hospitalización','DIAS HOSPITALIZACION','ESTANCIA_DIAS'
+    // NOTA: 'NUMERADOR' eliminado — en ESTANCIA DETALLADA contiene días
+    // acumulados por grupo (no por paciente), inflando el promedio.
   ];
   function getDias(row) {
     for (const col of _DIAS_COLS) {
@@ -844,20 +846,73 @@ const CALCS = (() => {
 
   function calcEstancia(rows, filters) {
     const r = applyFilters(rows, filters);
+
+    // Detectar si el archivo es SUMARIO (tiene NUMERADOR + DENOMINADOR por fila)
+    // vs DETALLADO (una fila por paciente con días en Estancia)
+    const hasSummary = r.length > 0 &&
+      (get(r[0],'NUMERADOR') !== '' || get(r[0],'DENOMINADOR') !== '');
+
+    const getEstDias = row => {
+      if (hasSummary) {
+        // Modo sumario: NUMERADOR = días totales del grupo, DENOMINADOR = pacientes
+        const n = safeNum(get(row,'NUMERADOR'));
+        return n;
+      }
+      const d = getDias(row);
+      // Sanidad: descartar valores irreales (> 730 días = 2 años) — probable error de campo
+      return d <= 730 ? d : 0;
+    };
+    const getEstPacientes = row => {
+      if (hasSummary) return safeNum(get(row,'DENOMINADOR')) || 1;
+      return 1;
+    };
+
     const porServicio={}, porIps={};
+    let diasTotal = 0, pacientesTotal = 0;
+
+    // Gestantes
+    const isGestante = row => esSI(get(row,'Gestación')) || esSI(get(row,'Gestacion'));
+    let gestantesN = 0, gestantesDias = 0;
+
     r.forEach(row => {
       const svc = get(row,'NOMBRE GENERAL DEL SERVICIO')||getPrimerServicio(row)||'Sin servicio';
-      if (!porServicio[svc]) porServicio[svc]={n:0,dias:0};
-      const dias = getDias(row);
-      porServicio[svc].n++; porServicio[svc].dias+=dias;
+      if (!porServicio[svc]) porServicio[svc]={n:0,dias:0,pacientes:0};
+      const dias = getEstDias(row);
+      const pac  = getEstPacientes(row);
+      porServicio[svc].n++;
+      porServicio[svc].dias += dias;
+      porServicio[svc].pacientes += pac;
+
       const ips = get(row,'IPS')||get(row,'Razon Social')||get(row,'RAZON SOCIAL')||get(row,'IPS_NOMBRE')||'Sin IPS';
-      if (!porIps[ips]) porIps[ips]={n:0,dias:0};
-      porIps[ips].n++; porIps[ips].dias+=dias;
+      if (!porIps[ips]) porIps[ips]={n:0,dias:0,pacientes:0,gestantes:0,gestantesDias:0};
+      porIps[ips].n++;
+      porIps[ips].dias += dias;
+      porIps[ips].pacientes += pac;
+
+      diasTotal += dias;
+      pacientesTotal += pac;
+
+      if (isGestante(row)) {
+        gestantesN++;
+        gestantesDias += dias;
+        porIps[ips].gestantes++;
+        porIps[ips].gestantesDias += dias;
+      }
     });
-    const diasTotal = r.reduce((a,row)=>a+getDias(row),0);
-    return { total: r.length, diasTotal,
-      promedio: r.length>0?diasTotal/r.length:0,
-      porServicio, porIps };
+
+    const pacEfectivo = hasSummary ? pacientesTotal : r.length;
+    return {
+      total: r.length,
+      pacientes: pacEfectivo,
+      diasTotal,
+      promedio: pacEfectivo > 0 ? diasTotal / pacEfectivo : 0,
+      hasSummary,
+      // Gestantes
+      gestantes: gestantesN,
+      gestantesDias,
+      gestantesPromedio: gestantesN > 0 ? gestantesDias / gestantesN : 0,
+      porServicio, porIps,
+    };
   }
 
   // ── HELPERS ──────────────────────────────────────────────
