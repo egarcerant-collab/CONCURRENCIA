@@ -267,13 +267,14 @@ const APP = (() => {
             ? (MESES_ES[mesesSel[0]] || mesesSel[0])
             : `${mesesSel.length} meses ✓`;
         const hasSel = mesesSel.length > 0;
-        return `<div style="position:relative;display:inline-flex;align-items:center;gap:4px">
+        return `<div style="display:inline-flex;align-items:center;gap:4px">
           <label style="margin:0">📅 Mes:</label>
           <button id="mes-toggle-btn" onclick="APP.toggleMesDropdown(event)"
             style="padding:5px 10px;border:1px solid ${hasSel?'#1a4f7a':'#d1dce8'};border-radius:8px;background:${hasSel?'#e8f0fe':'#fff'};cursor:pointer;font-size:12px;white-space:nowrap;color:${hasSel?'#1a4f7a':'#333'};font-weight:${hasSel?'600':'400'}">
             ${mesBtnLabel} ▾
           </button>
-          <div id="mes-panel" style="display:${mesOpen?'block':'none'};position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid #d1dce8;border-radius:10px;padding:6px 2px;z-index:500;min-width:170px;box-shadow:0 6px 24px rgba(0,0,0,.13)">
+          <!-- position:fixed calculado por JS al abrir — evita ser recortado por overflow:hidden del tab-panel -->
+          <div id="mes-panel" style="display:none;position:fixed;background:#fff;border:1px solid #d1dce8;border-radius:10px;padding:6px 2px;z-index:9999;min-width:170px;box-shadow:0 6px 24px rgba(0,0,0,.18)">
             <div style="padding:4px 10px 6px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eef2f7;margin-bottom:4px">
               <span style="font-size:11px;font-weight:700;color:#1a4f7a">Filtrar por mes</span>
               ${hasSel?`<button onclick="APP.clearMeses()" style="font-size:10px;padding:2px 7px;border:1px solid #e74c3c;border-radius:5px;background:#fff5f5;color:#e74c3c;cursor:pointer">✕ Limpiar</button>`:''}
@@ -2361,8 +2362,15 @@ const APP = (() => {
       if (e) { e.stopPropagation(); }
       state._mesOpen = !state._mesOpen;
       const panel = document.getElementById('mes-panel');
-      if (panel) panel.style.display = state._mesOpen ? 'block' : 'none';
+      const btn   = document.getElementById('mes-toggle-btn');
+      if (!panel || !btn) return;
       if (state._mesOpen) {
+        // Calcular posición real del botón (position:fixed no se ve afectado por overflow:hidden)
+        const rect = btn.getBoundingClientRect();
+        panel.style.top  = (rect.bottom + 4) + 'px';
+        panel.style.left = rect.left + 'px';
+        panel.style.display = 'block';
+        // Cerrar al hacer clic fuera
         const handler = (ev) => {
           const p = document.getElementById('mes-panel');
           const b = document.getElementById('mes-toggle-btn');
@@ -2373,6 +2381,8 @@ const APP = (() => {
           }
         };
         setTimeout(() => document.addEventListener('click', handler), 20);
+      } else {
+        panel.style.display = 'none';
       }
     },
     toggleMes: (k, checked) => {
