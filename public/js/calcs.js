@@ -111,15 +111,37 @@ const CALCS = (() => {
   }
 
   // ── Filtros ──────────────────────────────────────────────
+  // Extrae la fecha más relevante de una fila (intenta varios nombres de campo)
+  function getFecha(row) {
+    return String(
+      get(row,'Fecha Ingreso')   || get(row,'fecha_solicitud')  ||
+      get(row,'Fecha Egreso')    || get(row,'FECHA EGRESO')     ||
+      get(row,'FECHA INGRESO')   || get(row,'FECHA')            ||
+      get(row,'FECHA ALTA')      || get(row,'fecha_alta')       ||
+      get(row,'FECHA SOLICITUD') || get(row,'Fecha')            ||
+      get(row,'FECHA INSCRIPCION PROGRAMA DE HTA - DM)') || ''
+    );
+  }
+  // Verifica si una fecha (string) pertenece a un mes dado (mm '01'..'12')
+  function fechaEnMes(f, mp) {
+    return f.includes('/'+mp+'/') || f.includes('-'+mp+'-') ||
+           f.startsWith(mp+'/')   || f.startsWith(mp+'-');
+  }
+
   function applyFilters(rows, filters={}) {
     let r = rows;
     if (filters.ips && filters.ips !== 'todos') {
       const n = norm(filters.ips);
-      r = r.filter(row =>
-        norm(get(row,'IPS')).includes(n) ||
-        norm(get(row,'razon social')||get(row,'Razon Social')||'').includes(n) ||
-        norm(get(row,'NOMBRE DE LA  IPS QUE HACE SEGUIMIENTO')||'').includes(n)
-      );
+      r = r.filter(row => {
+        // Busca en múltiples campos posibles de IPS/prestador
+        const campos = [
+          get(row,'IPS'), get(row,'Prestador'), get(row,'PRESTADOR'),
+          get(row,'Razon Social'), get(row,'RAZON SOCIAL'), get(row,'Nombre IPS'),
+          get(row,'NOMBRE IPS'), get(row,'razon social'),
+          get(row,'NOMBRE DE LA  IPS QUE HACE SEGUIMIENTO'),
+        ];
+        return campos.some(v => v && norm(String(v)).includes(n));
+      });
     }
     if (filters.departamento && filters.departamento !== 'todos') {
       const n = norm(filters.departamento);
@@ -131,25 +153,24 @@ const CALCS = (() => {
     }
     if (filters.anio && filters.anio !== 'todos') {
       r = r.filter(row => {
-        const f = String(get(row,'Fecha Ingreso')||get(row,'fecha_solicitud')||get(row,'FECHA INSCRIPCION PROGRAMA DE HTA - DM)')||'');
-        return f.includes(filters.anio);
+        const f = getFecha(row);
+        return f && f.includes(filters.anio);
       });
     }
     // Filtro mes multi-selección (meses:['01','04',...]) — tiene prioridad sobre mes simple
     if (filters.meses && Array.isArray(filters.meses) && filters.meses.length > 0) {
       r = r.filter(row => {
-        const f = String(get(row,'Fecha Ingreso')||get(row,'fecha_solicitud')||'');
-        return filters.meses.some(m => {
-          const mp = String(m).padStart(2,'0');
-          return f.includes('/'+mp+'/') || f.includes('-'+mp+'-') || f.startsWith(mp+'/');
-        });
+        const f = getFecha(row);
+        if (!f) return true; // sin fecha → no filtrar
+        return filters.meses.some(m => fechaEnMes(f, String(m).padStart(2,'0')));
       });
     } else if (filters.mes && filters.mes !== 'todos') {
       // compatibilidad con filtro mes simple
-      const m = filters.mes.padStart(2,'0');
+      const mp = filters.mes.padStart(2,'0');
       r = r.filter(row => {
-        const f = String(get(row,'Fecha Ingreso')||get(row,'fecha_solicitud')||'');
-        return f.includes('/'+m+'/') || f.includes('-'+m+'-') || f.startsWith(m+'/');
+        const f = getFecha(row);
+        if (!f) return true; // sin fecha → no filtrar
+        return fechaEnMes(f, mp);
       });
     }
     return r;

@@ -1858,6 +1858,22 @@ const APP = (() => {
     if (!srcRows.length) { el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return; }
     // Siempre aplicar filtros (IPS, mes, año) — independientemente de la fuente
     const d = CALCS.calcEstancia(srcRows, state.filters);
+
+    // Si los filtros activos dan 0 resultados pero hay datos → avisar y ofrecer limpiar
+    if (d.total === 0 && srcRows.length > 0) {
+      el.innerHTML = filterBar() + `
+        <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:12px;padding:24px 28px;margin-top:16px;text-align:center">
+          <div style="font-size:36px;margin-bottom:10px">🔍</div>
+          <h3 style="color:#e65100;margin:0 0 8px">Sin resultados con los filtros actuales</h3>
+          <p style="color:#555;margin:0 0 16px;font-size:13px">
+            Los filtros aplicados (IPS, Mes, Año) no coinciden con los datos del archivo de Estancia.<br>
+            El archivo tiene <strong>${fmtN(srcRows.length)} registros</strong> en total.
+          </p>
+          <button onclick="APP.resetFilters()" style="padding:10px 24px;background:#e65100;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">↺ Limpiar todos los filtros</button>
+        </div>`;
+      return;
+    }
+
     const fuenteInfo = state.estanciaRows.length
       ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:12px">🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros</div>`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
