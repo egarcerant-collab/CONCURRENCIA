@@ -21,6 +21,8 @@ const APP = (() => {
     glosasUnlocked: false
   };
 
+  let _pendingDetallado = null;   // archivo pendiente de confirmar antes de procesar
+
   const MESES_ES = { '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio','07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre' };
 
   const SOURCES = [
@@ -190,7 +192,8 @@ const APP = (() => {
       estancia:'🛏️ Estancia Detallada',
       ubicacion:'📍 Usuarios Internados — Estancias Activas',
       rn:'👶 Cohorte Recién Nacido — Res. 117/2026',
-      datos:'⚙️ Cargar Datos'
+      datos:'⚙️ Cargar Datos',
+      admin:'🔐 Administrador — Sincronización de Datos'
     };
     document.getElementById('topbar-title').textContent = titles[tab]||'Dashboard';
     render();
@@ -200,7 +203,7 @@ const APP = (() => {
     const tab = state.activeTab;
     const m = { dashboard, hospitalizacion, uci, mortalidad, cesarea, desnutricion,
                 enfermedades, edaira, saludmental, rcv, riamp, glosas, concurrencias,
-                reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, datos };
+                reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, datos, admin };
     if (m[tab]) m[tab]();
   }
 
@@ -667,20 +670,63 @@ const APP = (() => {
     const el = document.getElementById('tab-uci');
     if (!state.rows.length) { el.innerHTML = noData(); return; }
     const d = CALCS.calcUCI(state.rows, state.filters);
+
+    // Estancia promedio de un conjunto de filas
+    function avgEst(rows) {
+      const v = rows.map(r => parseFloat(CALCS.get(r,'Estancia'))||0).filter(x=>x>0);
+      return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : '—';
+    }
+
+    // Genera tabla de detalle condicional
+    const tablaUCI = (titulo, emoji, rows) => !rows.length ? '' : `
+      <div class="data-table-wrap">
+        <h4 style="margin-bottom:8px">${emoji} ${titulo}
+          <span style="font-size:12px;font-weight:400;color:#888;margin-left:8px">
+            ${fmtN(rows.length)} pacientes · Estancia promedio: <b>${avgEst(rows)} días</b>
+          </span>
+        </h4>
+        ${buildTable(rows,['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad',
+          'Fecha Ingreso','Fecha Egreso','Estancia','Servicio','Diagnostico','Estado del Egreso','Auditor'])}
+      </div>`;
+
     el.innerHTML = `${filterBar()}
+      <div style="margin:0 0 6px;font-size:11px;color:#888;font-weight:700;letter-spacing:.8px;text-transform:uppercase">Cuidado Intensivo</div>
       <div class="kpi-grid">
-        ${kpi('UCI Total',fmtN(d.uciTotal),'pac.',`${fmt(d.tasaUciTotal)}% de hospitalizados`,'blue','🫀','Fuente: campo Servicio\nSuma de UCI Adulto + Neonatal + Pediátrica.\nCálculo: registros donde Servicio contiene "Cuidado Intensivo".')}
-        ${kpi('UCI Adulto',fmtN(d.uciAdulto),'',`${fmt(d.tasaUciAdulto)}% de UCI`,'orange','👨','Fuente: campo Servicio\nPacientes en UCI Adulto (Servicio contiene "Intensivo Adulto").')}
-        ${kpi('UCI Neonatal',fmtN(d.uciNeonatal),'',`${fmt(d.tasaUciNeonatal)}% de UCI`,'purple','👶','Fuente: campo Servicio\nPacientes en UCI Neonatal (Servicio contiene "Neonatal" o "Neonat").')}
-        ${kpi('UCI Pediátrica',fmtN(d.uciPediatrica),'',`${fmt(d.tasaUciPediatrica)}% de UCI`,'teal','🧒','Fuente: campo Servicio\nPacientes en UCI Pediátrica (Servicio contiene "Pediátric" o "Pediatric").')}
-        ${kpi('Total Hospitalizados',fmtN(d.totalHosp),'','base de comparación','blue','🏥','Fuente: campo Servicio\nTotal de pacientes en servicios de hospitalización (base para calcular % UCI.')}
+        ${kpi('UCI Total',fmtN(d.uciTotal),'pac.',`${fmt(d.tasaUciTotal)}% de ${fmtN(d.totalHosp)} hospitalizados`,'blue','🫀',
+          'Suma UCI Adulto + Neonatal + Pediátrica.\nFuente: campo Servicio.')}
+        ${kpi('UCI Adulto',fmtN(d.uciAdulto),'',
+          `${fmt(d.tasaUciAdulto)}% de UCI · Estancia prom. ${avgEst(d.rows_uciA)} días`,'orange','👨',
+          'Servicio contiene "Intensivo Adulto".')}
+        ${kpi('UCI Neonatal',fmtN(d.uciNeonatal),'',
+          `${fmt(d.tasaUciNeonatal)}% de UCI · Estancia prom. ${avgEst(d.rows_uciN)} días`,'purple','👶',
+          'Servicio contiene "Neonatal" / "Neonat".')}
+        ${kpi('UCI Pediátrica',fmtN(d.uciPediatrica),'',
+          `${fmt(d.tasaUciPediatrica)}% de UCI · Estancia prom. ${avgEst(d.rows_uciP)} días`,'teal','🧒',
+          'Servicio contiene "Pediátric" / "Pediatric".')}
       </div>
+
+      <div style="margin:18px 0 6px;font-size:11px;color:#888;font-weight:700;letter-spacing:.8px;text-transform:uppercase">Cuidado Intermedio y Básico</div>
+      <div class="kpi-grid">
+        ${kpi('Intermedio Adulto',fmtN(d.interAdulto),'','','orange','🛏️','Servicio contiene "Intermedio Adulto".')}
+        ${kpi('Intermedio Neonatal',fmtN(d.interNeonatal),'','','purple','🛏️','Servicio contiene "Intermedio Neonatal".')}
+        ${kpi('Intermedio Pediátrico',fmtN(d.interPediatrica),'','','teal','🛏️','Servicio contiene "Intermedio Pedi".')}
+        ${kpi('C. Básico Neonatal',fmtN(d.basNeonatal),'','','green','🍼','Servicio contiene "Básico Neonatal".')}
+        ${kpi('Total Hospitalizados',fmtN(d.totalHosp),'','base de comparación','blue','🏥',
+          'Total de pacientes en servicios de hospitalización.')}
+      </div>
+
       <div class="chart-grid">
         <div class="chart-card"><h4>UCI por Tipo</h4><canvas id="ch-uci-tipo" height="260"></canvas></div>
-        <div class="chart-card"><h4>UCI por IPS</h4><canvas id="ch-uci-ips" height="260"></canvas></div>
-      </div>`;
+        <div class="chart-card"><h4>UCI por IPS (Top 12)</h4><canvas id="ch-uci-ips" height="260"></canvas></div>
+      </div>
+
+      ${tablaUCI('UCI Adulto','👨',d.rows_uciA)}
+      ${tablaUCI('UCI Neonatal','👶',d.rows_uciN)}
+      ${tablaUCI('UCI Pediátrica','🧒',d.rows_uciP)}`;
+
     setTimeout(()=>{
-      CHARTS.dona('ch-uci-tipo',['UCI Adulto','UCI Neonatal','UCI Pediátrica'],[d.uciAdulto,d.uciNeonatal,d.uciPediatrica]);
+      CHARTS.dona('ch-uci-tipo',['UCI Adulto','UCI Neonatal','UCI Pediátrica'],
+        [d.uciAdulto,d.uciNeonatal,d.uciPediatrica]);
       const top = Object.entries(d.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias).slice(0,12);
       CHARTS.barras('ch-uci-ips',top.map(x=>x[0]),top.map(x=>x[1].coincidencias),'UCI','#1a4f7a');
     },50);
@@ -1066,7 +1112,7 @@ const APP = (() => {
             <h4 style="margin:0">📋 Listado General Recién Nacidos (${fmtN(d.totalRN)} registros)</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('todos')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rows, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
+          ${buildTable(d.rows, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Estado','Estado del Egreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
         </div>`;
 
     } else if (subTab === 'bajopeso') {
@@ -1086,7 +1132,7 @@ const APP = (() => {
             <h4 style="margin:0">Lista Bajo Peso al Nacer (${fmtN(d.rowsBajoPeso.length)})</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('bajopeso')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rowsBajoPeso, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado del Egreso','Estancia','Observación Seguimiento'])}
+          ${buildTable(d.rowsBajoPeso, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado del Egreso','Estancia','Observación Seguimiento'])}
         </div>`;
 
     } else if (subTab === 'congenitas') {
@@ -1105,7 +1151,7 @@ const APP = (() => {
             <h4 style="margin:0">Lista Enfermedades Congénitas (${fmtN(d.rowsCongenitas.length)})</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('congenitas')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rowsCongenitas, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Estancia','Observación Seguimiento'])}
+          ${buildTable(d.rowsCongenitas, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Estancia','Observación Seguimiento'])}
         </div>`;
 
     } else if (subTab === 'tamizaje') {
@@ -1123,7 +1169,7 @@ const APP = (() => {
             <h4 style="margin:0">Lista Tamizaje Alterado (${fmtN(d.rowsTamizaje.length)})</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('tamizaje')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rowsTamizaje, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Observación Seguimiento'])}
+          ${buildTable(d.rowsTamizaje, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Estado','Estado del Egreso','Observación Seguimiento'])}
         </div>`;
 
     } else if (subTab === 'abiertos') {
@@ -1141,7 +1187,7 @@ const APP = (() => {
             <h4 style="margin:0">Casos Abiertos (${fmtN(d.rowsAbiertos.length)})</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('abiertos')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rowsAbiertos, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
+          ${buildTable(d.rowsAbiertos, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Diagnostico','Cie10 Diagnostico','Servicio','Estancia','Auditor','Observación Seguimiento'])}
         </div>`;
 
     } else if (subTab === 'fallecidos') {
@@ -1159,7 +1205,7 @@ const APP = (() => {
             <h4 style="margin:0">Fallecidos Neonatales (${fmtN(d.rowsFallecidos.length)})</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('fallecidos')">⬇️ Exportar</button>
           </div>
-          ${buildTable(d.rowsFallecidos, ['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Estado del Egreso','Estancia','Auditor','Observación Seguimiento'])}
+          ${buildTable(d.rowsFallecidos, ['IPS','IPS Primaria','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Estado del Egreso','Estancia','Auditor','Observación Seguimiento'])}
         </div>`;
     }
 
@@ -1766,6 +1812,149 @@ const APP = (() => {
   }
 
   // ── TAB DATOS ─────────────────────────────────────────────
+  // ── MÓDULO ADMINISTRADOR ─────────────────────────────────
+  // Contraseña: 123456 — persiste en sessionStorage mientras dure la sesión
+  function admin() {
+    const el = document.getElementById('tab-admin');
+    if (!el) return;
+
+    const AUTH_KEY = 'adminAuth_dusakawi';
+    const autenticado = sessionStorage.getItem(AUTH_KEY) === '1';
+
+    // ── 1. Puerta de contraseña ──────────────────────────
+    if (!autenticado) {
+      el.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:0">
+          <div style="background:#fff;border-radius:16px;padding:40px 48px;box-shadow:0 4px 32px rgba(26,79,122,.15);max-width:420px;width:100%;text-align:center">
+            <div style="font-size:48px;margin-bottom:12px">🔐</div>
+            <h2 style="color:#1a4f7a;margin:0 0 6px">Módulo Administrador</h2>
+            <p style="font-size:13px;color:#888;margin:0 0 28px">Acceso restringido. Ingresa la contraseña para continuar.</p>
+            <input id="admin-pwd-input" type="password" placeholder="Contraseña"
+              style="width:100%;padding:12px 16px;border:2px solid #d1dce8;border-radius:10px;font-size:16px;text-align:center;outline:none;letter-spacing:4px;box-sizing:border-box"
+              onkeydown="if(event.key==='Enter')APP.adminLogin()"
+              autofocus>
+            <div id="admin-pwd-error" style="color:#e74c3c;font-size:12px;margin-top:8px;min-height:16px"></div>
+            <button onclick="APP.adminLogin()"
+              style="margin-top:16px;width:100%;padding:13px;background:#1a4f7a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.5px">
+              Ingresar
+            </button>
+          </div>
+        </div>`;
+      // Foco automático al input
+      setTimeout(()=>{ const i=document.getElementById('admin-pwd-input'); if(i) i.focus(); },80);
+      return;
+    }
+
+    // ── 2. Panel admin autenticado ───────────────────────
+    const totalMain   = state.rows.length;
+    const fileDetall  = state.fileNames.detallado||'';
+
+    function sourceCardAdmin(src) {
+      const stateKey = src.key === 'detallado' ? 'rows' : src.key+'Rows';
+      const loaded   = state[stateKey] && state[stateKey].length > 0;
+      const count    = loaded ? state[stateKey].length : 0;
+      const fname    = state.fileNames[src.key]||'';
+      return `
+        <div style="border:2px solid ${loaded?src.color:'#d1dce8'};border-radius:12px;padding:20px;background:${loaded?'#f8fffa':'#f8fafd'};position:relative">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:26px">${src.icon}</span>
+            <div>
+              <div style="font-weight:700;font-size:13px">${src.label}</div>
+              <div style="font-size:11px;color:#888">${src.hint}</div>
+            </div>
+            ${src.required?'<span style="position:absolute;top:10px;right:10px;background:#1a4f7a;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px">REQUERIDO</span>':''}
+          </div>
+          ${loaded
+            ? `<div style="color:${src.color};font-weight:700;font-size:12px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>`
+            : `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
+          <label style="cursor:pointer;display:inline-block">
+            <input type="file" accept=".xlsx,.xls,.xlsm,.csv"
+              onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
+            <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
+          </label>
+          ${loaded && src.key !== 'detallado'
+            ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
+            : ''}
+        </div>`;
+    }
+
+    el.innerHTML = `
+      <!-- Estado y cierre de sesión -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <h2 style="margin:0;color:#1a4f7a">🔐 Administrador — Sincronización de Datos</h2>
+          <p style="margin:4px 0 0;font-size:12px;color:#888">Dusakawi EPS · Dirección del Riesgo · Acceso verificado</p>
+        </div>
+        <button onclick="APP.adminLogout()"
+          style="padding:8px 18px;background:#e74c3c;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+          🔓 Cerrar sesión
+        </button>
+      </div>
+
+      <!-- ── SUBIDA DETALLADO (con guard de 2 pasos) ── -->
+      <div class="upload-section" style="border:2px solid #1a4f7a;background:linear-gradient(135deg,#e3f2fd,#fff);margin-bottom:20px">
+        <h3 style="color:#1a4f7a;margin:0 0 10px">📤 Subir Base de Datos Principal (DETALLADO)</h3>
+        <div style="padding:10px 14px;border-radius:8px;background:${totalMain?'#e8f5e9':'#fff3e0'};border:1px solid ${totalMain?'#a5d6a7':'#ff9800'};font-size:12px;color:#333;margin-bottom:16px">
+          ${totalMain
+            ? `☁️ ✅ <b>Base sincronizada</b> — ${fmtN(totalMain)} registros${state.uploadedAt.detallado?' · '+new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}`
+            : `⚠️ Sin datos. Selecciona el archivo DETALLADO para cargar.`}
+        </div>
+
+        <!-- Paso 1: Seleccionar archivo -->
+        <label style="cursor:pointer;display:inline-block">
+          <input type="file" accept=".xlsx,.xls,.xlsm" id="admin-file-input"
+            onchange="APP.onAdminFileSelect(this)" style="display:none">
+          <span style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;background:#1a4f7a;color:#fff;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+            📂 Seleccionar archivo DETALLADO
+          </span>
+        </label>
+
+        <!-- Paso 2: Preview + botón confirmar (oculto hasta selección) -->
+        <div id="admin-file-preview" style="display:none;margin-top:14px;padding:12px 16px;background:#f0f7ff;border:1.5px solid #2980b9;border-radius:8px;font-size:13px"></div>
+
+        <!-- Recargar desde nube -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d1dce8;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button onclick="APP.recargarNube()"
+            style="padding:9px 20px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+            🔄 Recargar desde Supabase
+          </button>
+          <button id="admin-sync-btn" onclick="APP.hospitalSync()"
+            style="padding:9px 20px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+            ▶ Ejecutar descarga automática
+          </button>
+          <span style="font-size:11px;color:#888">Restaura los datos ya guardados en la nube</span>
+        </div>
+        <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto">
+          <div id="drive-log-content"></div>
+        </div>
+      </div>
+
+      <!-- ── OTRAS FUENTES ── -->
+      <div class="upload-section">
+        <h3>📁 Fuentes de Datos Complementarias</h3>
+        <p style="font-size:13px;color:#666;margin-bottom:18px">
+          Carga las bases adicionales para activar cada módulo. El DETALLADO es requerido.
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+          ${SOURCES.filter(s=>s.key!=='detallado').map(src=>sourceCardAdmin(src)).join('')}
+        </div>
+      </div>
+
+      <!-- ── RESUMEN ── -->
+      ${totalMain > 0 ? `
+      <div class="upload-section">
+        <h3>📊 Resumen de datos en memoria</h3>
+        <div class="kpi-grid">
+          ${kpi('DETALLADO',fmtN(totalMain),'registros',fileDetall,'blue','🏥')}
+          ${state.rcvRows.length    ? kpi('RCV',fmtN(state.rcvRows.length),'registros',state.fileNames.rcv||'','red','❤️') : ''}
+          ${state.aiuRows.length    ? kpi('AIU',fmtN(state.aiuRows.length),'registros',state.fileNames.aiu||'','orange','🚑') : ''}
+          ${state.dntRows.length    ? kpi('DNT',fmtN(state.dntRows.length),'registros',state.fileNames.dnt||'','purple','🍽️') : ''}
+          ${state.cydRows.length    ? kpi('CyD',fmtN(state.cydRows.length),'registros',state.fileNames.cyd||'','green','🌱') : ''}
+          ${state.estanciaRows.length ? kpi('Estancia',fmtN(state.estanciaRows.length),'registros',state.fileNames.estancia||'','teal','🛏️') : ''}
+        </div>
+      </div>` : ''}`;
+  }
+
   function datos() {
     const el = document.getElementById('tab-datos');
     // Verificar estado de Drive al abrir la pestaña
@@ -1956,7 +2145,8 @@ const APP = (() => {
         enfermedades:'Enfermedades', edaira:'EDA_IRA', saludmental:'SaludMental',
         rcv:'RCV', riamp:'RIAMP', glosas:'Glosas', concurrencias:'Concurrencias',
         reingreso:'Reingreso', eventos:'EventosAdversos', aiu:'AIU', cyd:'CyD',
-        estancia:'Estancia', ubicacion:'Ubicacion_Pacientes', rn:'Cohorte_RecienNacido'
+        estancia:'Estancia', ubicacion:'Ubicacion_Pacientes', rn:'Cohorte_RecienNacido',
+        admin:'Administrador'
       };
       const name = tabNames[tab] || tab;
 
@@ -2234,6 +2424,57 @@ const APP = (() => {
     },
     handleUpload,
     handleUploadSource,
+    // ── Admin: autenticación por contraseña ──────────────────
+    adminLogin: () => {
+      const inp = document.getElementById('admin-pwd-input');
+      const err = document.getElementById('admin-pwd-error');
+      if (!inp) return;
+      if (inp.value === '123456') {
+        sessionStorage.setItem('adminAuth_dusakawi','1');
+        admin(); // re-renderizar con acceso completo
+      } else {
+        if (err) err.textContent = '❌ Contraseña incorrecta. Inténtalo de nuevo.';
+        inp.value = '';
+        inp.focus();
+        setTimeout(()=>{ if(err) err.textContent=''; },3000);
+      }
+    },
+    adminLogout: () => {
+      sessionStorage.removeItem('adminAuth_dusakawi');
+      _pendingDetallado = null;
+      admin();
+    },
+    // ── Admin: selección de archivo (Paso 1) ─────────────────
+    onAdminFileSelect: (input) => {
+      const file = input.files[0];
+      if (!file) return;
+      _pendingDetallado = file;
+      const prevEl = document.getElementById('admin-file-preview');
+      if (!prevEl) return;
+      prevEl.style.display = '';
+      prevEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span>📄 <b>${file.name}</b></span>
+          <span style="color:#888;font-size:12px">${(file.size/1024/1024).toFixed(2)} MB</span>
+          <button onclick="APP.processPendingDetallado()"
+            style="padding:9px 20px;background:#e67e22;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+            📤 Confirmar y Cargar
+          </button>
+          <button onclick="_pendingDetallado=null;document.getElementById('admin-file-preview').style.display='none'"
+            style="padding:9px 14px;background:#f5f5f5;color:#666;border:1px solid #ccc;border-radius:8px;font-size:13px;cursor:pointer">
+            ✕ Cancelar
+          </button>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#e67e22">⚠️ Al confirmar, se sobreescribirá la base de datos en Supabase.</div>`;
+    },
+    // ── Admin: Paso 2 — procesar archivo pendiente ────────────
+    processPendingDetallado: () => {
+      if (!_pendingDetallado) { toast('Sin archivo seleccionado','error'); return; }
+      handleUpload({ files: [_pendingDetallado] });
+      _pendingDetallado = null;
+      const prevEl = document.getElementById('admin-file-preview');
+      if (prevEl) prevEl.style.display = 'none';
+    },
     // ── Guardar datos actuales en Supabase ────────────────────
     saveDetallado: async () => {
       if (!state.rows.length) { toast('⚠️ No hay datos cargados para guardar','error'); return; }
