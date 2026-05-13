@@ -7,7 +7,16 @@ const CALCS = (() => {
   // ── Utilidades ──────────────────────────────────────────
   function safeNum(v) {
     if (!v && v !== 0) return 0;
-    const s = String(v).replace(/[^\d.\-]/g, '');
+    if (typeof v === 'number') return isNaN(v) ? 0 : v;
+    let s = String(v).trim();
+    // Formato colombiano: separador miles=punto, decimal=coma → "1.234,56"
+    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+      s = s.replace(/\./g,'').replace(',','.');
+    } else if (/,/.test(s) && !/\./.test(s)) {
+      // Solo coma → decimal con coma → "3,5"
+      s = s.replace(',','.');
+    }
+    s = s.replace(/[^\d.\-]/g, '');
     const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   }
@@ -665,19 +674,48 @@ const CALCS = (() => {
   }
 
   // ── 19. ESTANCIA DETALLADA ───────────────────────────────
+  // Candidatos para el campo de días — en orden de prioridad
+  const _DIAS_COLS = [
+    'Estancia','NUMERADOR','DIAS','DÍAS','Dias','Días',
+    'TOTAL DIAS','TOTAL DÍAS','DIAS ESTANCIA','DÍAS ESTANCIA',
+    'Días de Estancia','Dias de Estancia','dias_estancia',
+    'ESTANCIA','Estancias','ESTANCIAS','Num Dias','NUM DIAS',
+    'Días Hospitalización','DIAS HOSPITALIZACION','ESTANCIA_DIAS'
+  ];
+  function getDias(row) {
+    for (const col of _DIAS_COLS) {
+      const v = get(row, col);
+      if (v !== '' && v !== undefined && v !== null) {
+        // Normalizar coma decimal colombiana → punto
+        const s = String(v).replace(/\./g,'').replace(',','.').replace(/[^\d.\-]/g,'');
+        const n = parseFloat(s);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    }
+    // Último recurso: buscar cualquier columna cuyo nombre contenga "dia"
+    for (const k of Object.keys(row)) {
+      if (/d[ií]a/i.test(k)) {
+        const s = String(row[k]||'').replace(/\./g,'').replace(',','.').replace(/[^\d.\-]/g,'');
+        const n = parseFloat(s);
+        if (!isNaN(n) && n > 0) return n;
+      }
+    }
+    return 0;
+  }
+
   function calcEstancia(rows, filters) {
     const r = applyFilters(rows, filters);
-    const porServicio={}, porIps={}, porDx={};
+    const porServicio={}, porIps={};
     r.forEach(row => {
       const svc = get(row,'NOMBRE GENERAL DEL SERVICIO')||getPrimerServicio(row)||'Sin servicio';
       if (!porServicio[svc]) porServicio[svc]={n:0,dias:0};
-      const dias = safeNum(get(row,'Estancia')||get(row,'NUMERADOR'));
+      const dias = getDias(row);
       porServicio[svc].n++; porServicio[svc].dias+=dias;
-      const ips = get(row,'IPS')||get(row,'Razon Social')||'Sin IPS';
+      const ips = get(row,'IPS')||get(row,'Razon Social')||get(row,'RAZON SOCIAL')||get(row,'IPS_NOMBRE')||'Sin IPS';
       if (!porIps[ips]) porIps[ips]={n:0,dias:0};
       porIps[ips].n++; porIps[ips].dias+=dias;
     });
-    const diasTotal = r.reduce((a,row)=>a+safeNum(get(row,'Estancia')||get(row,'NUMERADOR')),0);
+    const diasTotal = r.reduce((a,row)=>a+getDias(row),0);
     return { total: r.length, diasTotal,
       promedio: r.length>0?diasTotal/r.length:0,
       porServicio, porIps };
