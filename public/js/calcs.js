@@ -306,23 +306,104 @@ const CALCS = (() => {
   // ── 4. MORTALIDAD ────────────────────────────────────────
   function calcMortalidad(rows, filters) {
     const r = applyFilters(rows, filters);
-    const fallecidos = r.filter(row => /fallecid|muert/i.test(String(get(row,'Estado del Egreso'))));
+
+    // ── Predicados base ──────────────────────────────────────
+    const isMuerto  = row => /fallecid|muert|obito|deceso|exitus/i.test(
+      String(get(row,'Estado del Egreso')||'') + '|' + String(get(row,'Estado')||''));
+    const isDNT     = row =>
+      /alteraciones.?nutricio/i.test(String(get(row,'Programa Riesgo'))) ||
+      matchCIE(row, ['E40','E41','E42','E43','E44','E45','E46','E50','E63','E64']);
+    const isGestante = row => esSI(get(row,'Gestación'));
+
+    const fallecidos = r.filter(isMuerto);
+
+    // ── Sub-grupos de fallecidos ─────────────────────────────
+    const fallUCIAdulto   = fallecidos.filter(isUCIAdulto);
+    const fallUCINeonatal = fallecidos.filter(isUCINeonatal);
+    const fallUCIPediat   = fallecidos.filter(isUCIPediatrica);
+    const fallUCI         = fallecidos.filter(isUCI);                          // cualquier UCI
+
+    // < 48h: estancia 0 o 1 día (o en blanco = misma jornada)
+    const fall48h     = fallecidos.filter(row => safeNum(get(row,'Estancia')) <= 1);
+
+    // Por edad
+    const fallMenores5  = fallecidos.filter(row => safeNum(get(row,'Edad')) < 5);
+    const fallPediat    = fallecidos.filter(row => { const e=safeNum(get(row,'Edad')); return e>=0 && e<18; });
+    const fallAdultos   = fallecidos.filter(row => safeNum(get(row,'Edad')) >= 18);
+
+    // DNT + muerte
+    const fallDNT       = fallecidos.filter(isDNT);
+
+    // Maternos (gestantes fallecidas)
+    const fallMaternos  = fallecidos.filter(isGestante);
+
+    // ── Por IPS ──────────────────────────────────────────────
     const porIps = {};
     r.forEach(row => {
       const ips = get(row,'IPS')||'Sin IPS';
-      if (!porIps[ips]) porIps[ips] = {total:0, fallecidos:0};
+      if (!porIps[ips]) porIps[ips] = {
+        total:0, fallecidos:0, uciAdulto:0, uciNeo:0, uciPed:0,
+        menores5:0, adultos:0, h48:0, dnt:0
+      };
       porIps[ips].total++;
-      if (/fallecid|muert/i.test(String(get(row,'Estado del Egreso')))) porIps[ips].fallecidos++;
+      if (!isMuerto(row)) return;
+      porIps[ips].fallecidos++;
+      if (isUCIAdulto(row))    porIps[ips].uciAdulto++;
+      if (isUCINeonatal(row))  porIps[ips].uciNeo++;
+      if (isUCIPediatrica(row))porIps[ips].uciPed++;
+      if (safeNum(get(row,'Edad')) < 5)  porIps[ips].menores5++;
+      if (safeNum(get(row,'Edad')) >= 18)porIps[ips].adultos++;
+      if (safeNum(get(row,'Estancia')) <= 1) porIps[ips].h48++;
+      if (isDNT(row)) porIps[ips].dnt++;
     });
+
+    // ── Por servicio ─────────────────────────────────────────
     const porServicio = {};
     fallecidos.forEach(row => {
       getServicios(row).forEach(svc => { porServicio[svc]=(porServicio[svc]||0)+1; });
     });
-    const porMes = groupByMesFiltered(r, row => /fallecid|muert/i.test(String(get(row,'Estado del Egreso'))));
+
+    // ── Tendencia mensual ─────────────────────────────────────
+    const porMes = groupByMesFiltered(r, isMuerto);
+
     return {
-      total: r.length, fallecidos: fallecidos.length,
+      total: r.length,
+      // General
+      fallecidos: fallecidos.length,
       tasaMortalidad: divide(fallecidos.length, r.length, 1000),
-      porIps, porServicio, porMes, rows: fallecidos
+      // UCI
+      fallUCIAdulto: fallUCIAdulto.length,
+      tasaUCIAdulto: divide(fallUCIAdulto.length, r.filter(isUCIAdulto).length),
+      fallUCINeonatal: fallUCINeonatal.length,
+      tasaUCINeonatal: divide(fallUCINeonatal.length, r.filter(isUCINeonatal).length),
+      fallUCIPediat: fallUCIPediat.length,
+      tasaUCIPediat: divide(fallUCIPediat.length, r.filter(isUCIPediatrica).length),
+      fallUCI: fallUCI.length,
+      // 48h
+      fall48h: fall48h.length,
+      tasa48h: divide(fall48h.length, fallecidos.length),
+      // Edad
+      fallMenores5: fallMenores5.length,
+      tasaMenores5: divide(fallMenores5.length, r.filter(row=>safeNum(get(row,'Edad'))<5).length),
+      fallPediat: fallPediat.length,
+      tasaPediat: divide(fallPediat.length, r.filter(row=>safeNum(get(row,'Edad'))<18).length),
+      fallAdultos: fallAdultos.length,
+      tasaAdultos: divide(fallAdultos.length, r.filter(row=>safeNum(get(row,'Edad'))>=18).length),
+      // DNT
+      fallDNT: fallDNT.length,
+      tasaDNT: divide(fallDNT.length, r.filter(isDNT).length),
+      // Materno
+      fallMaternos: fallMaternos.length,
+      tasaMaternos: divide(fallMaternos.length, r.filter(isGestante).length),
+      // Desgloses
+      porIps, porServicio, porMes,
+      rows: fallecidos,
+      rowsUCIAdulto: fallUCIAdulto,
+      rowsUCINeonatal: fallUCINeonatal,
+      rows48h: fall48h,
+      rowsMenores5: fallMenores5,
+      rowsDNT: fallDNT,
+      rowsMaternos: fallMaternos,
     };
   }
 

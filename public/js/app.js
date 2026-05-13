@@ -901,24 +901,173 @@ const APP = (() => {
     const el = document.getElementById('tab-mortalidad');
     if (!state.rows.length) { el.innerHTML = noData(); return; }
     const d = CALCS.calcMortalidad(state.rows, state.filters);
+
+    // ── Tabla resumen por IPS ──
+    const ipsEntries = Object.entries(d.porIps)
+      .filter(([,v]) => v.fallecidos > 0)
+      .sort((a,b) => b[1].fallecidos - a[1].fallecidos);
+    const ipsRows = ipsEntries.map(([ips,v]) => {
+      const tasa = v.total > 0 ? ((v.fallecidos/v.total)*1000).toFixed(1) : '0.0';
+      const col  = parseFloat(tasa) > 15 ? '#e74c3c' : parseFloat(tasa) > 8 ? '#e67e22' : '#27ae60';
+      return `<tr>
+        <td>${ips}</td>
+        <td style="text-align:center">${fmtN(v.total)}</td>
+        <td style="text-align:center;font-weight:700;color:#e74c3c">${fmtN(v.fallecidos)}</td>
+        <td style="text-align:center;font-weight:700;color:${col}">${tasa}</td>
+        <td style="text-align:center">${fmtN(v.uciAdulto)}</td>
+        <td style="text-align:center">${fmtN(v.uciNeo)}</td>
+        <td style="text-align:center">${fmtN(v.menores5)}</td>
+        <td style="text-align:center">${fmtN(v.h48)}</td>
+        <td style="text-align:center">${fmtN(v.dnt)}</td>
+      </tr>`;
+    }).join('');
+
+    // ── Servicios con fallecidos (para gráfica de dona) ──
+    const svcLabels = Object.keys(d.porServicio).filter(k => d.porServicio[k] > 0);
+    const svcVals   = svcLabels.map(k => d.porServicio[k]);
+
     el.innerHTML = `${filterBar()}
+
+      <!-- SECCIÓN 1: Mortalidad General -->
+      <div style="background:#fdecea;border-left:4px solid #e74c3c;border-radius:8px;padding:8px 14px;margin-bottom:10px">
+        <b style="color:#c0392b">⚕️ MORTALIDAD INTRAHOSPITALARIA GENERAL</b>
+      </div>
       <div class="kpi-grid">
-        ${kpi('Total Fallecidos',fmtN(d.fallecidos),'','','red','⚕️','Fuente: campo Estado del Egreso\nRegistros donde Estado del Egreso contiene "Fallecido" o "Muerte".')}
-        ${kpi('Tasa Mortalidad',d.tasaMortalidad,'x1000',`de ${fmtN(d.total)} egresos`,semColor(d.tasaMortalidad,15,false),'📉','Fórmula: (Fallecidos ÷ Egresos) × 1.000\nMeta: ≤ 15 x1000\nFuente: campos Estado del Egreso y Estado.')}
+        ${kpi('Total Fallecidos', fmtN(d.fallecidos), '', `de ${fmtN(d.total)} egresos`, 'red', '⚕️',
+          'Fallecidos: Estado del Egreso contiene fallecid/muert/obito/deceso/exitus.')}
+        ${kpi('Tasa Mortalidad', d.tasaMortalidad, 'x1000', `meta ≤ 15 x1000`,
+          semColor(d.tasaMortalidad, 15, false), '📉',
+          'Fórmula: (Fallecidos ÷ Total Egresos) × 1.000\nMeta: ≤ 15 x1000.')}
+        ${kpi('Fallecidos < 48h', fmtN(d.fall48h), 'pac.',
+          `${fmt(d.tasa48h)}% de fallecidos`, d.fall48h > 0 ? 'orange' : 'green', '⏱️',
+          'Pacientes fallecidos con Estancia ≤ 1 día (ingresados y fallecidos en menos de 48 horas).')}
+        ${kpi('Fallecidos < 5 años', fmtN(d.fallMenores5), 'pac.',
+          `${fmt(d.tasaMenores5)}% de hospitalizados <5a`, d.fallMenores5 > 0 ? 'red' : 'green', '👶',
+          'Fallecidos con Edad < 5 años. Indicador de mortalidad infantil.')}
+        ${kpi('Fallecidos Adultos', fmtN(d.fallAdultos), 'pac.',
+          `${fmt(d.tasaAdultos)}% de adultos hosp.`, d.fallAdultos > 0 ? 'red' : 'green', '🧑',
+          'Fallecidos con Edad ≥ 18 años.')}
+        ${d.fallMaternos > 0 ? kpi('Muertes Maternas', fmtN(d.fallMaternos), 'gestantes',
+          `${fmt(d.tasaMaternos)}% de gestantes hosp.`, 'red', '🤱',
+          'Gestantes fallecidas (campo Gestación = Sí + fallecido en egreso). Indicador crítico.') : ''}
       </div>
+
+      <!-- SECCIÓN 2: Mortalidad UCI -->
+      <div style="background:#fdecea;border-left:4px solid #c0392b;border-radius:8px;padding:8px 14px;margin:16px 0 10px">
+        <b style="color:#922b21">🫀 MORTALIDAD EN UCI</b>
+      </div>
+      <div class="kpi-grid">
+        ${kpi('Fallecidos UCI (Total)', fmtN(d.fallUCI), 'pac.',
+          `de ${fmtN(d.fallecidos)} fallecidos totales`, 'red', '🫀',
+          'Fallecidos en cualquier servicio de UCI (adulto + neonatal + pediátrica).')}
+        ${kpi('Mortalidad UCI Adulto', d.tasaUCIAdulto, '%',
+          `${fmtN(d.fallUCIAdulto)} fallecidos`,
+          semColor(d.tasaUCIAdulto, 15, false), '🏥',
+          'Fórmula: (Fallecidos UCI Adulto ÷ Hospitalizados UCI Adulto) × 100\nMeta: ≤ 15%.')}
+        ${kpi('Mortalidad UCI Neonatal', d.tasaUCINeonatal, '%',
+          `${fmtN(d.fallUCINeonatal)} fallecidos`,
+          semColor(d.tasaUCINeonatal, 20, false), '🍼',
+          'Fórmula: (Fallecidos UCI Neonatal ÷ Hospitalizados UCI Neonatal) × 100\nMeta: ≤ 20%.')}
+        ${kpi('Mortalidad UCI Pediátrica', d.tasaUCIPediat, '%',
+          `${fmtN(d.fallUCIPediat)} fallecidos`,
+          semColor(d.tasaUCIPediat, 15, false), '👧',
+          'Fórmula: (Fallecidos UCI Pediátrica ÷ Hospitalizados UCI Pediátrica) × 100\nMeta: ≤ 15%.')}
+      </div>
+
+      <!-- SECCIÓN 3: Mortalidad por Desnutrición -->
+      ${d.fallDNT > 0 ? `
+      <div style="background:#fdecea;border-left:4px solid #8e44ad;border-radius:8px;padding:8px 14px;margin:16px 0 10px">
+        <b style="color:#6c3483">🍽️ MORTALIDAD POR DESNUTRICIÓN (DNT)</b>
+      </div>
+      <div class="kpi-grid">
+        ${kpi('Fallecidos con DNT', fmtN(d.fallDNT), 'pac.',
+          `${fmt(d.tasaDNT)}% de pacientes DNT`, 'red', '🍽️',
+          'Pacientes con diagnóstico de desnutrición (E40-E46) cuyo egreso fue fallecido.')}
+      </div>` : ''}
+
+      <!-- Tabla resumen por IPS -->
+      ${ipsEntries.length ? `
+      <div class="data-table-wrap" style="margin-top:20px">
+        <h4 style="color:#c0392b">🏥 Resumen Mortalidad por IPS</h4>
+        <div class="table-scroll"><table>
+          <thead><tr>
+            <th>IPS</th><th style="text-align:center">Egresos</th>
+            <th style="text-align:center">Fallecidos</th>
+            <th style="text-align:center">Tasa x1000</th>
+            <th style="text-align:center">UCI Adulto</th>
+            <th style="text-align:center">UCI Neo.</th>
+            <th style="text-align:center">&lt;5 años</th>
+            <th style="text-align:center">&lt;48h</th>
+            <th style="text-align:center">DNT</th>
+          </tr></thead>
+          <tbody>${ipsRows}
+            <tr style="background:#fdecea;font-weight:700">
+              <td><b>Total</b></td>
+              <td style="text-align:center">${fmtN(d.total)}</td>
+              <td style="text-align:center;color:#e74c3c">${fmtN(d.fallecidos)}</td>
+              <td style="text-align:center">${fmt(d.tasaMortalidad,1)}</td>
+              <td style="text-align:center">${fmtN(d.fallUCIAdulto)}</td>
+              <td style="text-align:center">${fmtN(d.fallUCINeonatal)}</td>
+              <td style="text-align:center">${fmtN(d.fallMenores5)}</td>
+              <td style="text-align:center">${fmtN(d.fall48h)}</td>
+              <td style="text-align:center">${fmtN(d.fallDNT)}</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>` : ''}
+
+      <!-- Gráficas -->
       <div class="chart-grid">
-        <div class="chart-card"><h4>Mortalidad por IPS</h4><canvas id="ch-mort-ips" height="280"></canvas></div>
+        <div class="chart-card"><h4>Fallecidos por IPS</h4><canvas id="ch-mort-ips" height="280"></canvas></div>
         <div class="chart-card"><h4>Tendencia Mensual</h4><canvas id="ch-mort-mes" height="280"></canvas></div>
+        ${svcLabels.length ? `<div class="chart-card"><h4>Distribución por Servicio</h4><canvas id="ch-mort-svc" height="260"></canvas></div>` : ''}
+        <div class="chart-card"><h4>Tipos de Mortalidad</h4><canvas id="ch-mort-tipos" height="260"></canvas></div>
       </div>
-      <div class="data-table-wrap"><h4>Listado de Fallecidos</h4>
-        ${buildTable(d.rows,['IPS','Nombre Paciente','Numero Identificacion','Edad','Fecha Ingreso','Fecha Egreso','Estancia','Diagnostico','Cie10 Diagnostico','Cie10 Egreso','Auditor'])}
-      </div>`;
-    setTimeout(()=>{
-      const top = Object.entries(d.porIps).sort((a,b)=>b[1].fallecidos-a[1].fallecidos).slice(0,15);
-      CHARTS.barras('ch-mort-ips',top.map(x=>x[0]),top.map(x=>x[1].fallecidos),'Fallecidos','#e74c3c');
+
+      <!-- Listados por subtipo -->
+      <div class="data-table-wrap">
+        <h4>📋 Listado Completo de Fallecidos (${fmtN(d.fallecidos)})</h4>
+        ${buildTable(d.rows, ['IPS','Nombre Paciente','Numero Identificacion','Edad',
+          'Fecha Ingreso','Fecha Egreso','Estancia','Servicio',
+          'Diagnostico','Cie10 Diagnostico','Estado del Egreso','Auditor'])}
+      </div>
+      ${d.rows48h.length ? `
+      <div class="data-table-wrap" style="margin-top:16px;border:2px solid #e67e22;border-radius:10px">
+        <h4 style="color:#d35400;padding:10px 14px 0">⏱️ Fallecidos &lt; 48h (${fmtN(d.rows48h.length)})</h4>
+        ${buildTable(d.rows48h, ['IPS','Nombre Paciente','Numero Identificacion','Edad',
+          'Fecha Ingreso','Fecha Egreso','Estancia','Servicio','Diagnostico','Estado del Egreso'])}
+      </div>` : ''}
+      ${d.rowsMenores5.length ? `
+      <div class="data-table-wrap" style="margin-top:16px;border:2px solid #8e44ad;border-radius:10px">
+        <h4 style="color:#6c3483;padding:10px 14px 0">👶 Fallecidos &lt; 5 años (${fmtN(d.rowsMenores5.length)})</h4>
+        ${buildTable(d.rowsMenores5, ['IPS','Nombre Paciente','Numero Identificacion','Edad',
+          'Fecha Ingreso','Fecha Egreso','Estancia','Servicio','Diagnostico','Estado del Egreso'])}
+      </div>` : ''}`;
+
+    setTimeout(() => {
+      // Fallecidos por IPS
+      const top15 = Object.entries(d.porIps)
+        .filter(([,v]) => v.fallecidos > 0)
+        .sort((a,b) => b[1].fallecidos - a[1].fallecidos).slice(0, 15);
+      CHARTS.barras('ch-mort-ips', top15.map(x=>x[0]), top15.map(x=>x[1].fallecidos), 'Fallecidos', '#e74c3c');
+
+      // Tendencia mensual
       const mesKeys = Object.keys(d.porMes).sort();
-      CHARTS.lineas('ch-mort-mes',mesKeys,[{label:'Fallecidos',data:mesKeys.map(k=>d.porMes[k])}]);
-    },50);
+      CHARTS.lineas('ch-mort-mes', mesKeys, [{ label:'Fallecidos', data: mesKeys.map(k=>d.porMes[k]) }]);
+
+      // Por servicio (dona)
+      if (svcLabels.length && document.getElementById('ch-mort-svc')) {
+        CHARTS.dona('ch-mort-svc', svcLabels, svcVals, 'Por Servicio');
+      }
+
+      // Tipos de mortalidad (barras comparativas)
+      if (document.getElementById('ch-mort-tipos')) {
+        const tipoLabels = ['General','UCI Adulto','UCI Neonatal','UCI Pediátrica','< 48h','< 5 años','Adultos','DNT'];
+        const tipoVals   = [d.fallecidos, d.fallUCIAdulto, d.fallUCINeonatal, d.fallUCIPediat,
+                            d.fall48h, d.fallMenores5, d.fallAdultos, d.fallDNT];
+        CHARTS.barras('ch-mort-tipos', tipoLabels, tipoVals, 'Fallecidos', '#c0392b');
+      }
+    }, 50);
   }
 
   function cesarea() {
