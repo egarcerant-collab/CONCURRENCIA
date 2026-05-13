@@ -122,10 +122,84 @@ const APP = (() => {
   }
 
   // ── FILTROS ──────────────────────────────────────────────
+  // ── IPS dinámicas según el módulo activo ─────────────────
+  // Aplica todos los filtros EXCEPTO IPS para mostrar solo las IPS con datos en ese módulo
+  function computeTabIPS() {
+    const tab = state.activeTab;
+    const f0 = {...state.filters, ips:'todos'}; // elimina filtro IPS temporalmente
+    try {
+      let rows = [];
+      if (tab === 'uci') {
+        const d = CALCS.calcUCI(state.rows, f0);
+        rows = [...(d.rows_uciA||[]),...(d.rows_uciN||[]),...(d.rows_uciP||[]),
+                ...(d.rows_interA||[]),...(d.rows_interN||[]),...(d.rows_interP||[]),...(d.rows_basN||[])];
+      } else if (tab === 'mortalidad') {
+        rows = CALCS.calcMortalidad(state.rows, f0).rows || [];
+      } else if (tab === 'hospitalizacion') {
+        rows = CALCS.calcHospitalizacion(state.rows, f0).rows || [];
+      } else if (tab === 'cesarea') {
+        const d = CALCS.calcCesareas(state.rows, f0);
+        rows = d.gestantesRows || d.rows || [];
+      } else if (tab === 'desnutricion') {
+        rows = CALCS.calcDNT(state.rows, f0).rows || [];
+      } else if (tab === 'saludmental') {
+        rows = CALCS.calcSaludMental(state.rows, f0).rows || [];
+      } else if (tab === 'rcv') {
+        rows = state.rcvRows.length ? state.rcvRows : CALCS.applyFilters(state.rows, f0);
+      } else if (tab === 'riamp') {
+        const d = CALCS.calcRIAMP(state.rows, f0);
+        rows = d.gestantesRows || d.rows || [];
+      } else if (tab === 'glosas') {
+        rows = CALCS.calcGlosas(state.rows, f0).rows || [];
+      } else if (tab === 'concurrencias') {
+        rows = CALCS.calcConcurrencias(state.rows, f0).rows || [];
+      } else if (tab === 'reingreso') {
+        rows = CALCS.calcReingreso(state.rows, f0).rows || [];
+      } else if (tab === 'eventos') {
+        rows = CALCS.calcEventos(state.rows, f0).rows || [];
+      } else if (tab === 'enfermedades') {
+        const d = CALCS.calcEnfermedades(state.rows, f0);
+        ['dengue','tuberculosis','vih','hematologicas','cancer','erc',
+         'leishmaniasis','chagas','malaria','zoonoticas','respiratorias'].forEach(k=>{
+          if (d[k]?.rows) rows.push(...d[k].rows);
+        });
+      } else if (tab === 'edaira') {
+        const dE = CALCS.calcEDA ? CALCS.calcEDA(state.rows, f0) : {rows:[]};
+        const dI = CALCS.calcIRA ? CALCS.calcIRA(state.rows, f0) : {rows:[]};
+        rows = [...(dE.rows||[]),...(dI.rows||[])];
+      } else if (tab === 'rn') {
+        rows = CALCS.calcRecienNacido(state.rows, f0).rows || [];
+      } else if (tab === 'ubicacion') {
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        rows = CALCS.applyFilters(state.rows, f0).filter(r => {
+          if (!String(CALCS.get(r,'Estado')||'').toLowerCase().includes('abierto')) return false;
+          const fi = CALCS.get(r,'Fecha Ingreso'); if (!fi) return true;
+          const dd = new Date(fi); dd.setHours(0,0,0,0); return dd <= hoy;
+        });
+      } else if (tab === 'aiu') {
+        rows = state.aiuRows;
+      } else if (tab === 'estancia') {
+        rows = state.estanciaRows.length ? state.estanciaRows : CALCS.applyFilters(state.rows, f0);
+      } else {
+        rows = CALCS.applyFilters(state.rows, f0);
+      }
+      const lista = [...new Set(rows.map(r=>CALCS.get(r,'IPS')||'').filter(Boolean))].sort();
+      return lista.length ? lista : state.meta.ips;
+    } catch(e) {
+      return state.meta.ips; // fallback seguro
+    }
+  }
+
   function filterBar() {
     if (!state.rows.length) return '';
-    const { ips, anios, departamentos=[], municipios=[] } = state.meta;
-    // Si hay filtro de departamento activo, filtrar municipios a los de ese depto
+    const { anios, departamentos=[], municipios=[] } = state.meta;
+    // IPS dinámicas: solo las que tienen datos en el módulo actual
+    const ipsActivas = computeTabIPS();
+    // Si el filtro IPS activo no está en la lista dinámica, se mantiene para no perder la selección
+    const ipsList = (state.filters.ips && state.filters.ips !== 'todos' && !ipsActivas.includes(state.filters.ips))
+      ? [state.filters.ips, ...ipsActivas]
+      : ipsActivas;
+    // Municipios filtrados por departamento seleccionado
     let munFiltrados = municipios;
     if (state.filters.departamento && state.filters.departamento !== 'todos') {
       const depNorm = CALCS.normStr(state.filters.departamento);
@@ -151,8 +225,8 @@ const APP = (() => {
       </select>` : ''}
       <label>🏥 IPS:</label>
       <select onchange="APP.setFilter('ips',this.value)">
-        <option value="todos">Todas las IPS</option>
-        ${ips.map(i=>`<option value="${i}" ${state.filters.ips===i?'selected':''}>${i}</option>`).join('')}
+        <option value="todos">Todas las IPS <span style="color:#888">(${fmtN(ipsList.length)})</span></option>
+        ${ipsList.map(i=>`<option value="${i}" ${state.filters.ips===i?'selected':''}>${i}</option>`).join('')}
       </select>
       <label>📅 Año:</label>
       <select onchange="APP.setFilter('anio',this.value)">
