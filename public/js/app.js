@@ -187,7 +187,10 @@ const APP = (() => {
           });
         }
         if (tab === 'aiu')      return state.aiuRows;
-        if (tab === 'estancia') return state.estanciaRows.length ? state.estanciaRows : CALCS.applyFilters(state.rows, filters);
+        if (tab === 'estancia') {
+          const src = state.estanciaRows.length ? state.estanciaRows : state.rows;
+          return CALCS.applyFilters(src, filters);
+        }
         return CALCS.applyFilters(state.rows, filters);
       } catch(e) { return CALCS.applyFilters(state.rows, filters); }
     }
@@ -204,7 +207,7 @@ const APP = (() => {
   }
 
   function filterBar() {
-    if (!state.rows.length) return '';
+    if (!state.rows.length && !state.estanciaRows.length && !state.aiuRows.length) return '';
     const { anios, departamentos=[], municipios=[] } = state.meta;
     // IPS y conteo dinámicos: solo las que tienen datos en el módulo activo
     const tabData  = computeTabData(); // { ips:[], count:N, label:'texto' }
@@ -1866,11 +1869,12 @@ const APP = (() => {
     const el = document.getElementById('tab-estancia');
     const srcRows = state.estanciaRows.length ? state.estanciaRows : state.rows;
     if (!srcRows.length) { el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return; }
-    const d = CALCS.calcEstancia(srcRows, state.estanciaRows.length ? {} : state.filters);
+    // Siempre aplicar filtros (IPS, mes, año) — independientemente de la fuente
+    const d = CALCS.calcEstancia(srcRows, state.filters);
     const fuenteInfo = state.estanciaRows.length
       ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:12px">🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros</div>`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
-    el.innerHTML = `${state.estanciaRows.length ? '' : filterBar()}${fuenteInfo}
+    el.innerHTML = `${filterBar()}${fuenteInfo}
       <div class="kpi-grid">
         ${kpi('Total Registros',fmtN(d.total),'','','blue','🛏️')}
         ${kpi('Días Totales',fmtN(d.diasTotal),'días','','teal','📅')}
@@ -2538,7 +2542,7 @@ const APP = (() => {
         // Fuentes externas propias (se exportan completas)
         if (tab === 'aiu')      return state.aiuRows;
         if (tab === 'cyd')      return state.cydRows;
-        if (tab === 'estancia') return state.estanciaRows.length ? state.estanciaRows : CALCS.applyFilters(state.rows, f);
+        if (tab === 'estancia') { const src = state.estanciaRows.length ? state.estanciaRows : state.rows; return CALCS.applyFilters(src, f); }
         if (tab === 'rcv')      return state.rcvRows.length ? state.rcvRows : CALCS.applyFilters(state.rows, f);
 
         // Columnas de identidad del paciente — siempre incluidas
