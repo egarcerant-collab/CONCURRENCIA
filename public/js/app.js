@@ -1255,7 +1255,71 @@ const APP = (() => {
           <div class="chart-card"><h4>📍 RN por IPS (Top 12)</h4><canvas id="ch-rn-ips" height="280"></canvas></div>
           <div class="chart-card" style="grid-column:1/-1"><h4>📅 Tendencia Mensual — Ingresos RN</h4><canvas id="ch-rn-mes" height="180"></canvas></div>
         </div>
-        <div class="data-table-wrap">
+
+        <!-- ── Tabla distribución por categoría ─────────────────── -->
+        ${(() => {
+          const total = d.totalRN || 1;
+          const cats = [
+            { label:'Bajo Peso al Nacer',       icon:'⚖️',  n: d.bajoPeso,         cie:'P070 + P071',                color:'#e67e22' },
+            { label:'Peso Extrem. Bajo (P070)',  icon:'🚨',  n: d.pesoExtremoBajo,  cie:'P070 — < 1.000 g',           color:'#e74c3c' },
+            { label:'Otro Peso Bajo (P071)',     icon:'⚠️',  n: d.otroPesoBajo,     cie:'P071 — 1.000–2.499 g',       color:'#f39c12' },
+            { label:'Malform. Congénitas',       icon:'🧬',  n: d.congenitas,       cie:'Q00–Q99',                    color:'#27ae60' },
+            { label:'Tamizaje Alterado',         icon:'🔬',  n: d.tamizajeAlterado, cie:'E00, E03, E70, E74, H90',    color:'#8e44ad' },
+            { label:'Ictericia Neonatal',        icon:'🟡',  n: d.ictericia,        cie:'P55–P59',                    color:'#f1c40f' },
+            { label:'Infección Neonatal',        icon:'🦠',  n: d.infeccion,        cie:'P35–P39',                    color:'#c0392b' },
+            { label:'Asfixia Perinatal',         icon:'🫁',  n: d.asfixia,          cie:'P20–P21',                    color:'#2980b9' },
+            { label:'Casos Abiertos',            icon:'📂',  n: d.abiertos,         cie:'Estado = Abierto',           color:'#1a4f7a' },
+            { label:'Fallecidos Neonatales',     icon:'🕊️', n: d.fallecidos,        cie:'Estado Egreso = Fallecido',  color:'#7f8c8d' },
+          ];
+          const maxN = Math.max(...cats.map(c=>c.n), 1);
+          const filas = cats.map(c => {
+            const pct = ((c.n / total) * 100).toFixed(1);
+            const barW = Math.round((c.n / maxN) * 100);
+            const cColor = c.n === 0 ? '#bdc3c7' : c.color;
+            return `<tr>
+              <td style="white-space:nowrap;font-size:13px;padding:8px 12px">${c.icon} ${c.label}</td>
+              <td style="text-align:center;font-weight:700;font-size:15px;color:${cColor};padding:8px 12px">${fmtN(c.n)}</td>
+              <td style="text-align:center;font-size:13px;color:#555;padding:8px 12px">${pct}%</td>
+              <td style="padding:8px 12px;min-width:160px">
+                <div style="background:#eef2f7;border-radius:4px;height:10px;overflow:hidden">
+                  <div style="width:${barW}%;height:10px;background:${cColor};border-radius:4px;transition:width .4s"></div>
+                </div>
+              </td>
+              <td style="font-size:11px;color:#888;padding:8px 12px;white-space:nowrap">${c.cie}</td>
+            </tr>`;
+          }).join('');
+          return `
+          <div class="data-table-wrap" style="margin-top:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <h4 style="margin:0">📊 Distribución de los ${fmtN(d.totalRN)} RN por Categoría — Res. 117/2026</h4>
+              <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('distribucion')" style="background:#8e44ad;color:#fff;border-color:#8e44ad">⬇️ Exportar Distribución</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="min-width:220px">Categoría</th>
+                    <th style="text-align:center">Pacientes</th>
+                    <th style="text-align:center">% de RN</th>
+                    <th style="min-width:160px">Proporción</th>
+                    <th style="min-width:160px">Criterio CIE-10 / Estado</th>
+                  </tr>
+                </thead>
+                <tbody>${filas}</tbody>
+                <tfoot>
+                  <tr style="background:#f0f4fa;font-weight:700">
+                    <td style="padding:8px 12px">📋 Total Recién Nacidos</td>
+                    <td style="text-align:center;font-size:16px;color:#1a4f7a;padding:8px 12px">${fmtN(d.totalRN)}</td>
+                    <td style="text-align:center;padding:8px 12px">100%</td>
+                    <td colspan="2" style="padding:8px 12px;font-size:11px;color:#888">Nota: un mismo neonato puede pertenecer a más de una categoría</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>`;
+        })()}
+
+        <div class="data-table-wrap" style="margin-top:20px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <h4 style="margin:0">📋 Listado General Recién Nacidos (${fmtN(d.totalRN)} registros)</h4>
             <button class="btn btn-secondary btn-sm" onclick="APP.exportRN('todos')">⬇️ Exportar</button>
@@ -2325,6 +2389,28 @@ const APP = (() => {
         fallecidos: [...BASE_RN,'Diagnostico','Cie10 Diagnostico','Cie10 Egreso',
           'Estado del Egreso','Estancia','Auditor','Observación Seguimiento','Criterio RN'],
       };
+
+      // ── Caso especial: exportar tabla de distribución por categorías ──
+      if (subgrupo === 'distribucion') {
+        const total = d.totalRN || 1;
+        const distRows = [
+          { 'Categoría':'Bajo Peso al Nacer',       'Icono':'⚖️',  'Pacientes':d.bajoPeso,         '% de RN': fmt(CALCS.divide(d.bajoPeso,total)),         'Criterio CIE-10':'P070 + P071',             'Descripción':'Peso < 2.500 g al nacer' },
+          { 'Categoría':'Peso Extrem. Bajo (P070)',  'Icono':'🚨',  'Pacientes':d.pesoExtremoBajo,  '% de RN': fmt(CALCS.divide(d.pesoExtremoBajo,total)),  'Criterio CIE-10':'P070',                    'Descripción':'Peso extremadamente bajo < 1.000 g' },
+          { 'Categoría':'Otro Peso Bajo (P071)',     'Icono':'⚠️',  'Pacientes':d.otroPesoBajo,     '% de RN': fmt(CALCS.divide(d.otroPesoBajo,total)),     'Criterio CIE-10':'P071',                    'Descripción':'Peso bajo 1.000–2.499 g' },
+          { 'Categoría':'Malform. Congénitas',       'Icono':'🧬',  'Pacientes':d.congenitas,       '% de RN': fmt(CALCS.divide(d.congenitas,total)),       'Criterio CIE-10':'Q00–Q99',                 'Descripción':'Malformaciones, deformidades y anomalías cromosómicas' },
+          { 'Categoría':'Tamizaje Alterado',         'Icono':'🔬',  'Pacientes':d.tamizajeAlterado, '% de RN': fmt(CALCS.divide(d.tamizajeAlterado,total)), 'Criterio CIE-10':'E00, E03, E70, E74, H90', 'Descripción':'Hipotiroidismo, fenilcetonuria, galactosemia, hipoacusia' },
+          { 'Categoría':'Ictericia Neonatal',        'Icono':'🟡',  'Pacientes':d.ictericia,        '% de RN': fmt(CALCS.divide(d.ictericia,total)),        'Criterio CIE-10':'P55–P59',                 'Descripción':'Ictericia neonatal (hemolítica, incompatibilidad, etc.)' },
+          { 'Categoría':'Infección Neonatal',        'Icono':'🦠',  'Pacientes':d.infeccion,        '% de RN': fmt(CALCS.divide(d.infeccion,total)),        'Criterio CIE-10':'P35–P39',                 'Descripción':'Infecciones específicas del período perinatal' },
+          { 'Categoría':'Asfixia Perinatal',         'Icono':'🫁',  'Pacientes':d.asfixia,          '% de RN': fmt(CALCS.divide(d.asfixia,total)),          'Criterio CIE-10':'P20–P21',                 'Descripción':'Hipoxia intrauterina y asfixia al nacer' },
+          { 'Categoría':'Casos Abiertos',            'Icono':'📂',  'Pacientes':d.abiertos,         '% de RN': fmt(CALCS.divide(d.abiertos,total)),         'Criterio CIE-10':'Estado = Abierto',         'Descripción':'Neonatos aún hospitalizados o en seguimiento activo' },
+          { 'Categoría':'Fallecidos Neonatales',     'Icono':'🕊️', 'Pacientes':d.fallecidos,        '% de RN': fmt(CALCS.divide(d.fallecidos,total)),       'Criterio CIE-10':'Estado Egreso = Fallecido', 'Descripción':'Mortalidad neonatal en el período' },
+          { 'Categoría':'TOTAL RECIÉN NACIDOS',      'Icono':'👶',  'Pacientes':d.totalRN,          '% de RN':'100.0',                                      'Criterio CIE-10':'Serv. Neonatal / CIE-10 P / Edad ≤28d', 'Descripción':'Total neonatos identificados — Res. 117/2026' },
+        ];
+        const distCols = ['Categoría','Icono','Pacientes','% de RN','Criterio CIE-10','Descripción'];
+        if (!distRows.length) { toast('Sin datos de distribución','error'); return; }
+        exportExcel(distRows, 'RN_Distribucion_Categorias_Res117', distCols);
+        return;
+      }
 
       const mapa = {
         todos:      { rows: d.rows,           name: 'RN_General_Res117_2026' },
