@@ -68,14 +68,24 @@ const APP = (() => {
     </div>`;
   }
 
+  let _tblIdx = 0;
   function buildTable(rows, cols, max=200) {
     if(!rows||!rows.length) return '<p style="padding:16px;color:#aaa">Sin registros</p>';
     const headers = cols || Object.keys(rows[0]).filter(k => k && k!=='');
     const show = rows.slice(0,max);
-    return `<div class="table-scroll"><table>
-      <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-      <tbody>${show.map(r=>`<tr>${headers.map(h=>`<td>${r[h]??''}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table>${rows.length>max?`<p style="padding:8px 16px;font-size:11px;color:#888">Mostrando ${max} de ${fmtN(rows.length)} registros</p>`:''}</div>`;
+    const tid = 'tscroll-'+(++_tblIdx);
+    return `
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:6px 14px 0;background:#f8fafd;border-top:1px solid #eef2f7">
+        <span style="font-size:10px;color:#aaa;margin-right:4px">desplazar →</span>
+        <button onclick="(function(){var e=document.getElementById('${tid}');e.scrollLeft-=220;})()"
+          style="width:28px;height:28px;border:1px solid #d1dce8;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;line-height:1;color:#1a4f7a">‹</button>
+        <button onclick="(function(){var e=document.getElementById('${tid}');e.scrollLeft+=220;})()"
+          style="width:28px;height:28px;border:1px solid #d1dce8;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;line-height:1;color:#1a4f7a">›</button>
+      </div>
+      <div id="${tid}" class="table-scroll"><table>
+        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${show.map(r=>`<tr>${headers.map(h=>`<td>${r[h]??''}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>${rows.length>max?`<p style="padding:8px 16px;font-size:11px;color:#888">Mostrando ${max} de ${fmtN(rows.length)} registros</p>`:''}</div>`;
   }
 
   // ── EXPORTAR A EXCEL ─────────────────────────────────────

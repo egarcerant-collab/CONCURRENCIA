@@ -226,7 +226,13 @@ body {
   overflow-x: auto;
   width: 100%;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;   /* espacio para que el scrollbar sea visible */
+  scrollbar-width: thin;
+  scrollbar-color: #1a4f7a #e8eef4;
 }
+.data-table-wrap .table-scroll::-webkit-scrollbar { height: 6px; }
+.data-table-wrap .table-scroll::-webkit-scrollbar-track { background: #e8eef4; border-radius: 3px; }
+.data-table-wrap .table-scroll::-webkit-scrollbar-thumb { background: #1a4f7a; border-radius: 3px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 thead tr { background: #f0f4f8; }
 th { padding: 10px 14px; text-align: left; font-weight: 700; color: #555; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; border-bottom: 1px solid var(--border); }
