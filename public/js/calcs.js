@@ -844,9 +844,10 @@ const CALCS = (() => {
         if (!isNaN(n) && n > 0) return n;
       }
     }
-    // Último recurso: buscar cualquier columna cuyo nombre contenga "dia"
+    // Último recurso: columna cuyo nombre sea EXACTAMENTE días/estancia
+    // Excluir columnas que contienen "dia" como subcadena de otra palabra (ej: "Diagnostico")
     for (const k of Object.keys(row)) {
-      if (/d[ií]a/i.test(k)) {
+      if (/^(d[ií]as?|estancia|dias?\s+estancia|estancia\s+d[ií]as?)$/i.test(k.trim())) {
         const s = String(row[k]||'').replace(/\./g,'').replace(',','.').replace(/[^\d.\-]/g,'');
         const n = parseFloat(s);
         if (!isNaN(n) && n > 0) return n;
@@ -858,34 +859,26 @@ const CALCS = (() => {
   function calcEstancia(rows, filters, mainRows) {
     const r = applyFilters(rows, filters);
 
-    // ── Detectar formato del archivo ──────────────────────────
-    // SUMARIO: cada fila = grupo IPS/servicio con NUMERADOR(días) y DENOMINADOR(pacientes)
-    // DETALLADO: cada fila = un paciente con su estancia individual
-    //
-    // Detección robusta: intenta getDias en muestra. Si promedio > 30d → sumario
+    // ── Helpers para leer NUMERADOR / DENOMINADOR con múltiples variantes ──
+    // El archivo puede usar "NUMERADOR HOSPITALIZACION", "NUMERADOR", etc.
+    const _NUM_COLS  = ['NUMERADOR HOSPITALIZACION','NUMERADOR_HOSPITALIZACION',
+                        'NUMERADOR','Numerador','TOTAL DIAS','TOTAL_DIAS'];
+    const _DEN_COLS  = ['DENOMINADOR HOSPITALIZACION','DENOMINADOR_HOSPITALIZACION',
+                        'DENOMINADOR','Denominador','CANTIDAD PACIENTES','CANTIDAD_PACIENTES'];
+    const getNum = row => { for(const c of _NUM_COLS){ const v=safeNum(get(row,c)); if(v>0) return v; } return 0; };
+    const getDen = row => { for(const c of _DEN_COLS){ const v=safeNum(get(row,c)); if(v>0) return v; } return 0; };
+
+    // ── Detectar formato SUMARIO vs DETALLADO ─────────────────
     let hasSummary = false;
     if (r.length > 0) {
-      const denVal = safeNum(get(r[0],'DENOMINADOR'));
-      const numVal = safeNum(get(r[0],'NUMERADOR'));
-      if (denVal > 0 || numVal > 0) {
-        hasSummary = true; // tiene NUMERADOR/DENOMINADOR con valores
-      } else {
-        // Fallback: probar con muestra de 20 filas si promedio > 30 días
-        const sample = r.slice(0, 20);
-        const avgSample = sample.reduce((a,row) => a + getDias(row), 0) / sample.length;
-        hasSummary = avgSample > 30;
-      }
+      // Si la primera fila tiene NUMERADOR o DENOMINADOR con valor → sumario
+      const numVal = getNum(r[0]);
+      const denVal = getDen(r[0]);
+      hasSummary = numVal > 0 || denVal > 0;
     }
 
-    const getEstDias = row => {
-      if (hasSummary) return safeNum(get(row,'NUMERADOR'));
-      const d = getDias(row);
-      return d <= 730 ? d : 0;
-    };
-    const getEstPacientes = row => {
-      if (hasSummary) return safeNum(get(row,'DENOMINADOR')) || 1;
-      return 1;
-    };
+    const getEstDias      = row => hasSummary ? getNum(row) : (() => { const d=getDias(row); return d<=730?d:0; })();
+    const getEstPacientes = row => hasSummary ? (getDen(row) || 1) : 1;
 
     // ── Gestantes: desde rows fuente o desde mainRows (cruce) ─
     // El archivo ESTANCIA DETALLADA puede no tener campo Gestación →
