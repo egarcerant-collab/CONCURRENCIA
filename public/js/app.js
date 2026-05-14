@@ -2138,40 +2138,53 @@ const APP = (() => {
   // ── TAB ESTANCIA ──────────────────────────────────────────
   function estancia() {
     const el = document.getElementById('tab-estancia');
-    const srcRows = state.estanciaRows.length ? state.estanciaRows : state.rows;
-    if (!srcRows.length) { el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return; }
+    if (!state.rows.length && !state.estanciaRows.length) {
+      el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return;
+    }
 
-    // ── Pre-detectar si el archivo de estancia es de un solo prestador ─────────────
-    // Si es así, el filtro IPS NO debe aplicarse al archivo de estancia (que no lo tiene);
-    // solo se aplica a la BD principal para la tabla IPS.
-    const _estIpsSet = new Set(state.estanciaRows.map(r =>
-      CALCS.get(r,'IPS')||CALCS.get(r,'Razon Social')||CALCS.get(r,'RAZON SOCIAL')||'Sin IPS'));
+    // ── Detectar si el archivo de estancia es monoprestador ──────────────────────
+    // Cuando tiene ≤ 2 IPS distintas, las estadísticas se calculan siempre desde
+    // la BD principal (state.rows) para que el filtro IPS funcione correctamente.
+    // El archivo de estancia se usa únicamente para enriquecer cuando el filtro IPS
+    // coincide con el prestador del archivo (sin filtro o filtro = mismo prestador).
+    const _estIpsArr = state.estanciaRows.map(r =>
+      String(CALCS.get(r,'IPS')||CALCS.get(r,'Razon Social')||CALCS.get(r,'RAZON SOCIAL')||'').toLowerCase().trim()
+    ).filter(Boolean);
+    const _estIpsSet   = new Set(_estIpsArr);
+    const _estIpsName  = [..._estIpsSet].filter(x=>x&&x!=='sin ips')[0] || '';
+    const ipsFilterNorm = CALCS.normStr(state.filters.ips || 'todos');
+    // ¿El filtro activo de IPS coincide con el prestador del archivo?
+    const ipsMatchesFile = !state.filters.ips || state.filters.ips === 'todos' ||
+      _estIpsName.includes(ipsFilterNorm) || ipsFilterNorm.includes(_estIpsName.substring(0,8));
     const useMainForIps = state.estanciaRows.length > 0 && state.rows.length > 0 && _estIpsSet.size <= 2;
 
-    // Filtros para el archivo de estancia: si es monoprestador, ignorar el filtro IPS
-    // (aplicar los demás: año, mes, departamento, municipio)
-    const filtrosEst = useMainForIps
-      ? { ...state.filters, ips: 'todos' }
+    // Fuente de datos activa:
+    //  - Si hay archivo de estancia Y el filtro IPS coincide (o no hay filtro IPS) → usar archivo
+    //  - Si hay archivo de estancia PERO el filtro IPS es de otro prestador → usar BD principal
+    //  - Si no hay archivo de estancia → usar BD principal
+    const usarArchivoEst = state.estanciaRows.length > 0 && (!useMainForIps || ipsMatchesFile);
+    const srcRows  = usarArchivoEst ? state.estanciaRows : state.rows;
+    const filtrosD = usarArchivoEst && useMainForIps
+      ? { ...state.filters, ips: 'todos' }   // archivo es monoprestador: no filtrar por IPS
       : state.filters;
 
-    // d: cálculo principal desde el archivo de estancia (KPIs + desglose por servicio)
-    const d = CALCS.calcEstancia(srcRows, filtrosEst, state.rows);
+    // d: cálculo principal (KPIs + servicio)
+    const d = CALCS.calcEstancia(srcRows, filtrosD, state.rows);
 
-    // dIps: desglose por IPS — siempre desde la BD principal cuando el archivo es monoprestador
+    // dIps: tabla IPS — siempre desde state.rows con todos los filtros activos
     const dIps        = useMainForIps
       ? CALCS.calcEstancia(state.rows, state.filters, state.rows)
       : d;
     const porIpsTabla = dIps.porIps;
 
-    // Si los filtros de mes/año dan 0 resultados en AMBAS fuentes → avisar
-    if (d.total === 0 && dIps.total === 0 && srcRows.length > 0) {
+    // Sin resultados solo si ambas fuentes dan 0
+    if (d.total === 0 && dIps.total === 0) {
       el.innerHTML = filterBar() + `
         <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:12px;padding:24px 28px;margin-top:16px;text-align:center">
           <div style="font-size:36px;margin-bottom:10px">🔍</div>
           <h3 style="color:#e65100;margin:0 0 8px">Sin resultados con los filtros actuales</h3>
           <p style="color:#555;margin:0 0 16px;font-size:13px">
-            Los filtros aplicados (Mes, Año) no coinciden con los datos cargados.<br>
-            El archivo tiene <strong>${fmtN(srcRows.length)} registros</strong> en total.
+            Los filtros aplicados (Mes, Año) no tienen registros en los datos cargados.
           </p>
           <button onclick="APP.resetFilters()" style="padding:10px 24px;background:#e65100;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">↺ Limpiar todos los filtros</button>
         </div>`;
@@ -2200,10 +2213,13 @@ const APP = (() => {
       </div>` : '';
 
     const fuenteInfo = state.estanciaRows.length
-      ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:6px">
-           🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros
-           ${d.hasSummary ? '<span style="margin-left:8px;background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📊 Formato sumario</span>' : '<span style="margin-left:8px;background:#d4edda;color:#155724;padding:1px 7px;border-radius:8px;font-size:11px">✅ Detallado por paciente</span>'}
-         </div>${colsInspector}`
+      ? `<div style="padding:6px 14px;background:${usarArchivoEst?'#e3f2fd':'#fff8e1'};border-radius:6px;font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+           ${usarArchivoEst
+             ? `🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros
+                ${d.hasSummary ? '<span style="background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📊 Formato sumario</span>' : '<span style="background:#d4edda;color:#155724;padding:1px 7px;border-radius:8px;font-size:11px">✅ Detallado por paciente</span>'}`
+             : `📂 Servicios y KPIs calculados desde <b>BD Principal</b> (el archivo de estancia no tiene datos de esta IPS)
+                <span style="background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📁 ${state.fileNames.estancia||'Estancia Detallada'}: ${fmtN(state.estanciaRows.length)} reg.</span>`}
+         </div>${usarArchivoEst ? colsInspector : ''}`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
     const pacLabel = d.hasSummary ? 'Pacientes (Σ Denominador)' : 'Total Pacientes';
     const pctGest  = d.pacientes > 0 ? CALCS.divide(d.gestantes, d.pacientes) : 0;  // ← CALCS.divide correcto
