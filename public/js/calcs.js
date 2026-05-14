@@ -1126,6 +1126,24 @@ const CALCS = (() => {
     calcConcurrencias, calcReingreso, calcEventos,
     calcAIU, calcCYD, calcEstancia,
     calcRecienNacido,
-    groupByIPS, groupByIPSFiltered, groupByMes
+    groupByIPS, groupByIPSFiltered, groupByMes,
+    // Diagnóstico: retorna columna y valor que getDias detecta en una fila
+    getDiasDebug: (row) => {
+      for (const col of _DIAS_COLS) {
+        const v = get(row, col);
+        if (v !== '' && v !== undefined && v !== null) {
+          const s = String(v).replace(/\./g,'').replace(',','.').replace(/[^\d.\-]/g,'');
+          const n = parseFloat(s);
+          if (!isNaN(n) && n > 0) return `col="${col}" val="${v}" → ${n}d`;
+        }
+      }
+      for (const k of Object.keys(row)) {
+        if (/d[ií]a/i.test(k)) {
+          const v = row[k];
+          return `fallback col="${k}" val="${v}"`;
+        }
+      }
+      return '0 (sin columna de días)';
+    }
   };
 })();

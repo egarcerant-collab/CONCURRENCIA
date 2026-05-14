@@ -2159,11 +2159,32 @@ const APP = (() => {
       return;
     }
 
+    // Inspector de columnas del archivo de estancia (para diagnóstico)
+    const colsEstancia = state.estanciaRows.length
+      ? Object.keys(state.estanciaRows[0])
+      : [];
+    const colsInspector = state.estanciaRows.length ? `
+      <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:11px">
+        <b style="color:#1a4f7a">🔍 Columnas detectadas en el archivo (${colsEstancia.length}):</b><br>
+        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+          ${colsEstancia.map(c => {
+            const val = String(state.estanciaRows[0][c]||'');
+            const isDias = /d[ií]a|estancia|numer/i.test(c);
+            return `<span style="padding:1px 7px;border-radius:8px;font-size:10px;background:${isDias?'#fff3cd':'#e9ecef'};color:${isDias?'#856404':'#495057'};border:1px solid ${isDias?'#ffc107':'#ced4da'}" title="Ejemplo: ${val.slice(0,30)}">${c}</span>`;
+          }).join('')}
+        </div>
+        <div style="margin-top:6px;color:#666">
+          📌 Primer registro: días detectados por getDias = <b>${CALCS.getDiasDebug ? CALCS.getDiasDebug(state.estanciaRows[0]) : 'n/d'}</b>
+          · hasSummary = <b>${d.hasSummary}</b>
+          · promedio = <b>${fmt(d.promedio)} días</b>
+        </div>
+      </div>` : '';
+
     const fuenteInfo = state.estanciaRows.length
-      ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:12px">
+      ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:6px">
            🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros
-           ${d.hasSummary ? '<span style="margin-left:8px;background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📊 Formato sumario: NUMERADOR/DENOMINADOR por grupo</span>' : '<span style="margin-left:8px;background:#d4edda;color:#155724;padding:1px 7px;border-radius:8px;font-size:11px">✅ Formato detallado: una fila por paciente</span>'}
-         </div>`
+           ${d.hasSummary ? '<span style="margin-left:8px;background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📊 Formato sumario</span>' : '<span style="margin-left:8px;background:#d4edda;color:#155724;padding:1px 7px;border-radius:8px;font-size:11px">✅ Detallado por paciente</span>'}
+         </div>${colsInspector}`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
     const pacLabel = d.hasSummary ? 'Pacientes (Σ Denominador)' : 'Total Pacientes';
     const pctGest  = d.pacientes > 0 ? CALCS.divide(d.gestantes, d.pacientes) : 0;  // ← CALCS.divide correcto
