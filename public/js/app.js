@@ -2140,9 +2140,18 @@ const APP = (() => {
     const el = document.getElementById('tab-estancia');
     const srcRows = state.estanciaRows.length ? state.estanciaRows : state.rows;
     if (!srcRows.length) { el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return; }
-    // Siempre aplicar filtros (IPS, mes, año) — independientemente de la fuente
+    // d: cálculo principal desde el archivo de estancia (KPIs + desglose por servicio)
     // mainRows = BD principal para cruzar gestantes (el archivo ESTANCIA puede no tener Gestación)
     const d = CALCS.calcEstancia(srcRows, state.filters, state.rows);
+
+    // ── IPS table: si el archivo de estancia tiene ≤ 2 IPS distintas (archivo de 1 prestador),
+    //    usar la BD principal (state.rows) para el desglose IPS — que tiene todos los prestadores.
+    const nIpsEnEstancia = Object.keys(d.porIps).length;
+    const useMainForIps  = state.estanciaRows.length > 0 && state.rows.length > 0 && nIpsEnEstancia <= 2;
+    const dIps           = useMainForIps
+      ? CALCS.calcEstancia(state.rows, state.filters, state.rows)
+      : d;
+    const porIpsTabla    = dIps.porIps;
 
     // Si los filtros activos dan 0 resultados pero hay datos → avisar y ofrecer limpiar
     if (d.total === 0 && srcRows.length > 0) {
@@ -2208,8 +2217,8 @@ const APP = (() => {
       </tr>`;
     }).join('');
 
-    // Tabla por IPS con gestantes
-    const ipsRows = Object.entries(d.porIps)
+    // Tabla por IPS con gestantes — usa porIpsTabla (BD completa si archivo es de 1 IPS)
+    const ipsRows = Object.entries(porIpsTabla)
       .sort((a,b) => (b[1].pacientes||b[1].n) - (a[1].pacientes||a[1].n))
       .map(([ips,v]) => {
         const pac  = v.pacientes || v.n;
@@ -2281,7 +2290,7 @@ const APP = (() => {
 
       <!-- Tabla por IPS -->
       <div class="data-table-wrap">
-        <h4>🏥 Estancia por IPS — incluye Gestantes</h4>
+        <h4>🏥 Estancia por IPS — incluye Gestantes${useMainForIps?' <span style="font-size:11px;font-weight:400;color:#666;background:#e3f2fd;padding:2px 8px;border-radius:8px;margin-left:6px">Fuente: BD Principal</span>':''}</h4>
         <div class="table-scroll"><table>
           <thead><tr>
             <th>IPS</th>
@@ -2318,8 +2327,8 @@ const APP = (() => {
           svcConGest.map(x=>x[1].gestantes),
           'Total Pac.', 'Gestantes', '#2980b9', '#8e44ad');
       }
-      // Promedio por IPS
-      const topIps = Object.entries(d.porIps).sort((a,b)=>(b[1].pacientes||b[1].n)-(a[1].pacientes||a[1].n)).slice(0,15);
+      // Promedio por IPS — usa porIpsTabla (BD completa cuando archivo es de 1 prestador)
+      const topIps = Object.entries(porIpsTabla).sort((a,b)=>(b[1].pacientes||b[1].n)-(a[1].pacientes||a[1].n)).slice(0,15);
       CHARTS.barras('ch-est-ips', topIps.map(x=>x[0]),
         topIps.map(x=>{ const p=x[1].pacientes||x[1].n; return p>0?x[1].dias/p:0; }),
         'Prom. Días', '#1a4f7a');
