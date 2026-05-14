@@ -2140,27 +2140,37 @@ const APP = (() => {
     const el = document.getElementById('tab-estancia');
     const srcRows = state.estanciaRows.length ? state.estanciaRows : state.rows;
     if (!srcRows.length) { el.innerHTML = noData('Carga datos para ver la Estancia Detallada'); return; }
-    // d: cálculo principal desde el archivo de estancia (KPIs + desglose por servicio)
-    // mainRows = BD principal para cruzar gestantes (el archivo ESTANCIA puede no tener Gestación)
-    const d = CALCS.calcEstancia(srcRows, state.filters, state.rows);
 
-    // ── IPS table: si el archivo de estancia tiene ≤ 2 IPS distintas (archivo de 1 prestador),
-    //    usar la BD principal (state.rows) para el desglose IPS — que tiene todos los prestadores.
-    const nIpsEnEstancia = Object.keys(d.porIps).length;
-    const useMainForIps  = state.estanciaRows.length > 0 && state.rows.length > 0 && nIpsEnEstancia <= 2;
-    const dIps           = useMainForIps
+    // ── Pre-detectar si el archivo de estancia es de un solo prestador ─────────────
+    // Si es así, el filtro IPS NO debe aplicarse al archivo de estancia (que no lo tiene);
+    // solo se aplica a la BD principal para la tabla IPS.
+    const _estIpsSet = new Set(state.estanciaRows.map(r =>
+      CALCS.get(r,'IPS')||CALCS.get(r,'Razon Social')||CALCS.get(r,'RAZON SOCIAL')||'Sin IPS'));
+    const useMainForIps = state.estanciaRows.length > 0 && state.rows.length > 0 && _estIpsSet.size <= 2;
+
+    // Filtros para el archivo de estancia: si es monoprestador, ignorar el filtro IPS
+    // (aplicar los demás: año, mes, departamento, municipio)
+    const filtrosEst = useMainForIps
+      ? { ...state.filters, ips: 'todos' }
+      : state.filters;
+
+    // d: cálculo principal desde el archivo de estancia (KPIs + desglose por servicio)
+    const d = CALCS.calcEstancia(srcRows, filtrosEst, state.rows);
+
+    // dIps: desglose por IPS — siempre desde la BD principal cuando el archivo es monoprestador
+    const dIps        = useMainForIps
       ? CALCS.calcEstancia(state.rows, state.filters, state.rows)
       : d;
-    const porIpsTabla    = dIps.porIps;
+    const porIpsTabla = dIps.porIps;
 
-    // Si los filtros activos dan 0 resultados pero hay datos → avisar y ofrecer limpiar
-    if (d.total === 0 && srcRows.length > 0) {
+    // Si los filtros de mes/año dan 0 resultados en AMBAS fuentes → avisar
+    if (d.total === 0 && dIps.total === 0 && srcRows.length > 0) {
       el.innerHTML = filterBar() + `
         <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:12px;padding:24px 28px;margin-top:16px;text-align:center">
           <div style="font-size:36px;margin-bottom:10px">🔍</div>
           <h3 style="color:#e65100;margin:0 0 8px">Sin resultados con los filtros actuales</h3>
           <p style="color:#555;margin:0 0 16px;font-size:13px">
-            Los filtros aplicados (IPS, Mes, Año) no coinciden con los datos del archivo de Estancia.<br>
+            Los filtros aplicados (Mes, Año) no coinciden con los datos cargados.<br>
             El archivo tiene <strong>${fmtN(srcRows.length)} registros</strong> en total.
           </p>
           <button onclick="APP.resetFilters()" style="padding:10px 24px;background:#e65100;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">↺ Limpiar todos los filtros</button>
