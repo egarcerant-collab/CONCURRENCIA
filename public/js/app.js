@@ -2191,26 +2191,7 @@ const APP = (() => {
       return;
     }
 
-    // Inspector de columnas del archivo de estancia (para diagnóstico)
-    const colsEstancia = state.estanciaRows.length
-      ? Object.keys(state.estanciaRows[0])
-      : [];
-    const colsInspector = state.estanciaRows.length ? `
-      <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:11px">
-        <b style="color:#1a4f7a">🔍 Columnas detectadas en el archivo (${colsEstancia.length}):</b><br>
-        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
-          ${colsEstancia.map(c => {
-            const val = String(state.estanciaRows[0][c]||'');
-            const isDias = /d[ií]a|estancia|numer/i.test(c);
-            return `<span style="padding:1px 7px;border-radius:8px;font-size:10px;background:${isDias?'#fff3cd':'#e9ecef'};color:${isDias?'#856404':'#495057'};border:1px solid ${isDias?'#ffc107':'#ced4da'}" title="Ejemplo: ${val.slice(0,30)}">${c}</span>`;
-          }).join('')}
-        </div>
-        <div style="margin-top:6px;color:#666">
-          📌 Primer registro: días detectados por getDias = <b>${CALCS.getDiasDebug ? CALCS.getDiasDebug(state.estanciaRows[0]) : 'n/d'}</b>
-          · hasSummary = <b>${d.hasSummary}</b>
-          · promedio = <b>${fmt(d.promedio)} días</b>
-        </div>
-      </div>` : '';
+    const colsInspector = '';
 
     const fuenteInfo = state.estanciaRows.length
       ? `<div style="padding:6px 14px;background:${usarArchivoEst?'#e3f2fd':'#fff8e1'};border-radius:6px;font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
