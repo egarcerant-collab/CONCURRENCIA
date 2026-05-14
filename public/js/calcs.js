@@ -855,22 +855,31 @@ const CALCS = (() => {
     return 0;
   }
 
-  function calcEstancia(rows, filters) {
+  function calcEstancia(rows, filters, mainRows) {
     const r = applyFilters(rows, filters);
 
-    // Detectar si el archivo es SUMARIO (tiene NUMERADOR + DENOMINADOR por fila)
-    // vs DETALLADO (una fila por paciente con días en Estancia)
-    const hasSummary = r.length > 0 &&
-      (get(r[0],'NUMERADOR') !== '' || get(r[0],'DENOMINADOR') !== '');
+    // ── Detectar formato del archivo ──────────────────────────
+    // SUMARIO: cada fila = grupo IPS/servicio con NUMERADOR(días) y DENOMINADOR(pacientes)
+    // DETALLADO: cada fila = un paciente con su estancia individual
+    //
+    // Detección robusta: intenta getDias en muestra. Si promedio > 30d → sumario
+    let hasSummary = false;
+    if (r.length > 0) {
+      const denVal = safeNum(get(r[0],'DENOMINADOR'));
+      const numVal = safeNum(get(r[0],'NUMERADOR'));
+      if (denVal > 0 || numVal > 0) {
+        hasSummary = true; // tiene NUMERADOR/DENOMINADOR con valores
+      } else {
+        // Fallback: probar con muestra de 20 filas si promedio > 30 días
+        const sample = r.slice(0, 20);
+        const avgSample = sample.reduce((a,row) => a + getDias(row), 0) / sample.length;
+        hasSummary = avgSample > 30;
+      }
+    }
 
     const getEstDias = row => {
-      if (hasSummary) {
-        // Modo sumario: NUMERADOR = días totales del grupo, DENOMINADOR = pacientes
-        const n = safeNum(get(row,'NUMERADOR'));
-        return n;
-      }
+      if (hasSummary) return safeNum(get(row,'NUMERADOR'));
       const d = getDias(row);
-      // Sanidad: descartar valores irreales (> 730 días = 2 años) — probable error de campo
       return d <= 730 ? d : 0;
     };
     const getEstPacientes = row => {
@@ -878,11 +887,29 @@ const CALCS = (() => {
       return 1;
     };
 
+    // ── Gestantes: desde rows fuente o desde mainRows (cruce) ─
+    // El archivo ESTANCIA DETALLADA puede no tener campo Gestación →
+    // cruzamos por Numero Identificacion con la BD principal (mainRows)
+    const gestantesIds = new Set();
+    if (mainRows && mainRows.length) {
+      mainRows.forEach(row => {
+        if (esSI(get(row,'Gestación')) || esSI(get(row,'Gestacion'))) {
+          const id = String(get(row,'Numero Identificacion')||get(row,'NUMERO IDENTIFICACION')||'').trim();
+          if (id) gestantesIds.add(id);
+        }
+      });
+    }
+    const isGestante = row => {
+      // Primero: campo directo en el archivo de estancia
+      if (esSI(get(row,'Gestación')) || esSI(get(row,'Gestacion'))) return true;
+      // Segundo: cruce por ID con BD principal
+      const id = String(get(row,'Numero Identificacion')||get(row,'NUMERO IDENTIFICACION')||
+                        get(row,'IDENTIFICACION')||get(row,'identificacion')||'').trim();
+      return id ? gestantesIds.has(id) : false;
+    };
+
     const porServicio={}, porIps={};
     let diasTotal = 0, pacientesTotal = 0;
-
-    // Gestantes
-    const isGestante = row => esSI(get(row,'Gestación')) || esSI(get(row,'Gestacion'));
     let gestantesN = 0, gestantesDias = 0;
 
     r.forEach(row => {
