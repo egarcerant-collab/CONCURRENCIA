@@ -2163,7 +2163,6 @@ const APP = (() => {
       ? `<div style="padding:6px 14px;background:#e3f2fd;border-radius:6px;font-size:12px;margin-bottom:12px">
            🛏️ Fuente: <b>${state.fileNames.estancia||'Estancia Detallada'}</b> — ${fmtN(state.estanciaRows.length)} registros
            ${d.hasSummary ? '<span style="margin-left:8px;background:#fff3cd;color:#856404;padding:1px 7px;border-radius:8px;font-size:11px">📊 Formato sumario: NUMERADOR/DENOMINADOR por grupo</span>' : '<span style="margin-left:8px;background:#d4edda;color:#155724;padding:1px 7px;border-radius:8px;font-size:11px">✅ Formato detallado: una fila por paciente</span>'}
-           <span style="margin-left:8px;color:#666;font-size:11px">ℹ️ Este archivo contiene solo los datos de la IPS del nombre del archivo.</span>
          </div>`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Calculado desde DETALLADO. Carga el archivo <b>ESTANCIA DETALLADA</b> en ⚙️ Datos para más detalle.</div>`;
     const pacLabel = d.hasSummary ? 'Pacientes (Σ Denominador)' : 'Total Pacientes';
