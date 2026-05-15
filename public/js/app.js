@@ -618,20 +618,32 @@ const APP = (() => {
     res202: null, // null = guardar todo (se determinará según tamaño real)
   };
 
+  // Normalización simple de nombre de columna (sin regex de caracteres Unicode)
+  function normCol(s) {
+    return String(s||'').toLowerCase()
+      .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i')
+      .replace(/ó/g,'o').replace(/ú/g,'u').replace(/ñ/g,'n')
+      .replace(/Á/g,'a').replace(/É/g,'e').replace(/Í/g,'i')
+      .replace(/Ó/g,'o').replace(/Ú/g,'u').replace(/Ñ/g,'n')
+      .trim();
+  }
+
   function slimRows(sourceKey, rows) {
     const cols = CLOUD_COLS[sourceKey];
     if (!cols || !rows.length) return rows;
+    // Construir mapa normalizado de columnas reales del primer row
+    const realKeys = Object.keys(rows[0]);
+    const normMap  = {};
+    realKeys.forEach(k => { normMap[normCol(k)] = k; });
+    // Para cada columna esencial, buscar su nombre real en el row
+    const usar = cols.map(c => {
+      if (rows[0][c] !== undefined) return [c, c];      // nombre exacto
+      const real = normMap[normCol(c)];
+      return real !== undefined ? [c, real] : null;     // nombre normalizado
+    }).filter(Boolean);
     return rows.map(r => {
       const o = {};
-      cols.forEach(c => { if (r[c] !== undefined) o[c] = r[c]; });
-      // Guardar también bajo nombre normalizado por si hay variación
-      Object.keys(r).forEach(k => {
-        const kn = String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-        cols.forEach(c => {
-          const cn = c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-          if (kn === cn && o[c] === undefined) o[c] = r[k];
-        });
-      });
+      usar.forEach(([alias, real]) => { o[alias] = r[real] !== undefined ? r[real] : ''; });
       return o;
     });
   }
@@ -642,22 +654,28 @@ const APP = (() => {
     const src = SOURCES.find(s=>s.key===sourceKey);
     toast(`⏳ Leyendo ${src?.label||sourceKey}…`,'info');
     readFile(file, (err, rows) => {
-      if (err) { toast('❌ Error: '+err.message,'error'); return; }
-      const stateKey = sourceKey === 'detallado' ? 'rows' : sourceKey+'Rows';
-      state[stateKey] = rows;          // Memoria: todas las columnas
-      state.fileNames[sourceKey] = file.name;
-      if (sourceKey === 'detallado') {
-        state.meta = CALCS.extractMeta(rows);
+      try {
+        if (err) { toast('❌ Error leyendo archivo: '+(err.message||err),'error'); return; }
+        if (!rows || rows.length === 0) { toast('⚠️ El archivo no tiene filas válidas','error'); return; }
+        const stateKey = sourceKey === 'detallado' ? 'rows' : sourceKey+'Rows';
+        state[stateKey] = rows;          // Memoria: todas las columnas
+        state.fileNames[sourceKey] = file.name;
+        if (sourceKey === 'detallado') {
+          state.meta = CALCS.extractMeta(rows);
+        }
+        const meta = sourceKey === 'detallado'
+          ? { source: 'manual-upload', tipoReporte: 1 }
+          : {};
+        // Nube: solo columnas esenciales (evita límite de 50MB de Supabase)
+        const rowsCloud = slimRows(sourceKey, rows);
+        saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
+        updateStatusBar();
+        toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
+        if (sourceKey === 'detallado') navigate('dashboard'); else datos();
+      } catch(ex) {
+        toast('❌ Error procesando archivo: '+(ex.message||ex),'error');
+        console.error('[handleUploadSource]', ex);
       }
-      const meta = sourceKey === 'detallado'
-        ? { source: 'manual-upload', tipoReporte: 1 }
-        : {};
-      // Nube: solo columnas esenciales (evita límite de 50MB de Supabase)
-      const rowsCloud = slimRows(sourceKey, rows);
-      saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
-      updateStatusBar();
-      toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros → ☁️ subiendo a Supabase…`,'success');
-      if (sourceKey === 'detallado') navigate('dashboard'); else datos();
     });
   }
 
