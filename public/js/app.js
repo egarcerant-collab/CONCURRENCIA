@@ -1446,15 +1446,25 @@ const APP = (() => {
     const dI = CALCS.calcIRA(state.rows, state.filters);
 
     // ── Cruce con PyP (Res. 3280) por Número de Identificación ──────────────
+    // Normalización: Excel puede leer cédulas como float (1.08E+09 → 1083053963)
+    // Se convierte a entero string para comparar correctamente en ambos lados.
+    function normID(v) {
+      if (v === null || v === undefined || v === '') return '';
+      const n = Number(v);
+      if (!isNaN(n) && n > 0 && isFinite(n)) return String(Math.round(n));
+      return String(v).trim().replace(/\.0+$/, '');
+    }
+
     const hasPyP = state.pypRows.length > 0;
     const pypByID = {};
     if (hasPyP) {
       state.pypRows.forEach(r => {
-        const id = String(
+        const raw =
           CALCS.get(r,'Número de identificación del usuario') ||
+          CALCS.get(r,'Numero de identificacion del usuario') ||
           CALCS.get(r,'Numero identificacion del usuario') ||
-          CALCS.get(r,'Numero Identificacion') || ''
-        ).trim();
+          CALCS.get(r,'Numero Identificacion') || '';
+        const id = normID(raw);
         if (id) pypByID[id] = r;
       });
     }
@@ -1467,7 +1477,7 @@ const APP = (() => {
       const porSexo = {M:0, F:0, Otro:0};
       let gestantes = 0, conPyP = 0;
       const enriched = rows.map(r => {
-        const id = String(CALCS.get(r,'Numero Identificacion')||'').trim();
+        const id = normID(CALCS.get(r,'Numero Identificacion') || CALCS.get(r,'NUMERO IDENTIFICACION') || '');
         const pyp = hasPyP ? pypByID[id] : null;
         if (pyp) conPyP++;
         // Edad: primero del registro hospitalario, luego de PyP
