@@ -37,7 +37,7 @@ const APP = (() => {
     { key:'dnt',       label:'Seguimiento Desnutrición (DNT)',   hint:'Seguimiento DNT.xlsx',                       icon:'🍽️', color:'#8e44ad', required:false },
     { key:'cyd',       label:'Crecimiento y Desarrollo (CyD)',   hint:'cyd.csv',                                    icon:'👶', color:'#27ae60', required:false },
     { key:'estancia',  label:'Estancia Detallada',               hint:'ESTANCIA DETALLADA ROSARIO PUMAREJO.xlsx',   icon:'🛏️', color:'#2980b9', required:false },
-    { key:'pyp',       label:'PyP — Prevención y Promoción (Res. 3280)', hint:'Reporte_PyP_3280_....xlsx / .csv',  icon:'🩺', color:'#16a085', required:false },
+    { key:'pyp',       label:'PyP — Prevención y Promoción (Res. 3280)', hint:'informe_4505_Consolidado.txt · .xlsx · .csv',  icon:'🩺', color:'#16a085', required:false },
   ];
 
   // ── UI helpers ──────────────────────────────────────────
@@ -372,13 +372,104 @@ const APP = (() => {
     return {rows,cols};
   }
 
+  // ── Columnas estándar Res. 3280 (119 campos, delimitado por |, sin encabezado) ──
+  const PYP_COLS = [
+    'tipo_registro','consecutivo','codigo_habilitacion_ips',
+    'tipo_identificacion',
+    'Numero de identificacion del usuario',   // pos 4 — clave de cruce
+    'primer_apellido','segundo_apellido','primer_nombre','segundo_nombre',
+    'Fecha Nacimiento',                       // pos 9
+    'Sexo',                                   // pos 10
+    'grupo_poblacional','etnia','discapacidad',
+    'Gestante',                               // pos 14
+    'semanas_gestacion','numero_gestaciones','numero_partos','numero_cesareas',
+    'numero_abortos','numero_ectopicos','numero_mortinatos','planificacion_familiar',
+    'metodo_planificacion','numero_hijos_vivos','via_afiliacion','codigo_eps',
+    'nombre_eps','codigo_municipio_residencia','municipio_residencia',
+    'departamento_residencia','zona_residencia','barrio_vereda',
+    'codigo_prestador','tipo_evento','concepto_atencion',
+    'clasificacion_riesgo_gestacional',       // pos 35
+    'patologia_detectada','fecha_ultima_atencion','fecha_proxima_cita',
+    'resultado_tamizaje_hemoglobina',
+    'resultado_tamizaje_vale',                // pos 40
+    'resultado_tamizaje_glucosa','resultado_tamizaje_colesterol',
+    'resultado_tamizaje_trigliceridos','resultado_tamizaje_creatinina',
+    'resultado_tamizaje_uroanalisis','resultado_tamizaje_coprologi',
+    'resultado_tamizaje_baciloscopia','resultado_tamizaje_citologia',
+    'resultado_tamizaje_mamografia','resultado_tamizaje_sangre_oculta',
+    'resultado_tamizaje_agudeza_visual','resultado_tamizaje_agudeza_auditiva',
+    'resultado_tamizaje_presion_arterial','resultado_tamizaje_imc',
+    'resultado_tamizaje_perimetro_abdominal',
+    'resultado_tamizaje_desarrollo_psicomotor','resultado_tamizaje_salud_oral',
+    'resultado_tamizaje_salud_mental','resultado_tamizaje_violencia',
+    'resultado_tamizaje_sustancias','resultado_tamizaje_actividad_fisica',
+    'resultado_tamizaje_alimentacion','resultado_tamizaje_cancer_cuello',
+    'resultado_tamizaje_cancer_mama','resultado_tamizaje_cancer_colon',
+    'resultado_tamizaje_cancer_prostata','resultado_tamizaje_cancer_piel',
+    'resultado_tamizaje_enf_pulmonar','resultado_tamizaje_enf_renal',
+    'resultado_tamizaje_enf_hepatica','resultado_tamizaje_enf_osteoporosis',
+    'resultado_tamizaje_vih','resultado_tamizaje_sifilis',
+    'resultado_tamizaje_hepatitis_b','resultado_tamizaje_hepatitis_c',
+    'resultado_tamizaje_chagas','resultado_tamizaje_toxoplasmosis',
+    'resultado_tamizaje_rubeola','resultado_tamizaje_varicela',
+    'resultado_tamizaje_dengue','resultado_tamizaje_malaria',
+    'resultado_tamizaje_leishmaniasis','resultado_tamizaje_tuberculosis',
+    'vacuna_covid','vacuna_influenza','vacuna_hepatitis_b',
+    'vacuna_fiebre_amarilla','vacuna_triple_viral','vacuna_varicela',
+    'vacuna_neumococo','vacuna_antitetanica','vacuna_meningococo',
+    'vacuna_vph','actividad_grupal','actividad_individual',
+    'actividad_toma_muestras','actividad_educacion_grupal',
+    'actividad_educacion_individual','campo_76','campo_77','campo_78',
+    'campo_79','campo_80','campo_81','campo_82','campo_83','campo_84',
+    'campo_85','campo_86','campo_87','campo_88','campo_89','campo_90',
+    'campo_91','campo_92','campo_93','campo_94','campo_95','campo_96',
+    'campo_97','campo_98','campo_99','campo_100','campo_101','campo_102',
+    'campo_103','campo_104','campo_105','campo_106','campo_107','campo_108',
+    'campo_109','campo_110','campo_111','campo_112','campo_113',
+    'Clasificación del riesgo cardiovascular', // pos 114
+    'campo_115','campo_116',
+    'clasificacion_riesgo_metabolico',         // pos 117
+    'campo_118'
+  ];
+
+  function parsePyPTXT(text) {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const rows = [];
+    for (const line of lines) {
+      const parts = line.split('|');
+      const row = {};
+      PYP_COLS.forEach((col, i) => {
+        row[col] = parts[i] !== undefined ? String(parts[i]).trim() : '';
+      });
+      // Normalizar Sexo: F→Femenino, M→Masculino
+      if (row['Sexo'] === 'F') row['Sexo'] = 'Femenino';
+      else if (row['Sexo'] === 'M') row['Sexo'] = 'Masculino';
+      // Calcular Edad a partir de Fecha Nacimiento (YYYY-MM-DD)
+      if (row['Fecha Nacimiento'] && !row['Edad']) {
+        try {
+          const fn = new Date(row['Fecha Nacimiento']);
+          if (!isNaN(fn)) {
+            const hoy = new Date();
+            let edad = hoy.getFullYear() - fn.getFullYear();
+            if (hoy.getMonth() < fn.getMonth() || (hoy.getMonth()===fn.getMonth() && hoy.getDate()<fn.getDate())) edad--;
+            row['Edad'] = String(edad >= 0 ? edad : '');
+          }
+        } catch(e) {}
+      }
+      if (parts.length >= 5) rows.push(row); // fila válida mínima
+    }
+    return { rows, cols: PYP_COLS };
+  }
+
   function readFile(file, callback) {
     const reader = new FileReader();
     const ext = file.name.split('.').pop().toLowerCase();
     reader.onload = e => {
       try {
         let rows, cols;
-        if (ext === 'csv') {
+        if (ext === 'txt') {
+          ({rows,cols} = parsePyPTXT(e.target.result));
+        } else if (ext === 'csv') {
           ({rows,cols} = parseCSV(e.target.result));
         } else {
           const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true});
@@ -393,7 +484,7 @@ const APP = (() => {
         callback(null, rows, cols);
       } catch(err) { callback(err); }
     };
-    if (ext==='csv') reader.readAsText(file,'UTF-8'); else reader.readAsArrayBuffer(file);
+    if (ext==='csv'||ext==='txt') reader.readAsText(file,'UTF-8'); else reader.readAsArrayBuffer(file);
   }
 
   // Columnas esenciales para el dashboard (reduce payload a ~1.5MB)
@@ -573,7 +664,7 @@ const APP = (() => {
   // Cargar datos SIEMPRE desde Supabase (fuente única y autoritativa)
   // localStorage solo como último recurso si Supabase es inaccesible
   async function loadSaved(silencioso = false) {
-    const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA'};
+    const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP'};
 
     const hasSupa = !!window.SUPA_DB;
     if (!silencioso) toast('☁️ Sincronizando con la nube...','info');
@@ -2663,7 +2754,7 @@ const APP = (() => {
             ? `<div style="color:${src.color};font-weight:700;font-size:12px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>`
             : `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
           <label style="cursor:pointer;display:inline-block">
-            <input type="file" accept=".xlsx,.xls,.xlsm,.csv"
+            <input type="file" accept="${src.key==='pyp'?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}"
               onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
             <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
           </label>
@@ -2772,7 +2863,7 @@ const APP = (() => {
         ${loaded ? `<div style="color:${src.color};font-weight:700;font-size:13px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>` :
                    `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
         <label style="cursor:pointer;display:inline-block">
-          <input type="file" accept=".xlsx,.xls,.xlsm,.csv" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
+          <input type="file" accept="${src.key==='pyp'?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
           <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
         </label>
         ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
