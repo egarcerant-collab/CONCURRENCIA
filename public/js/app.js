@@ -498,6 +498,7 @@ const APP = (() => {
         callback(null, rows, cols);
       } catch(err) { callback(err); }
     };
+    reader.onerror = () => callback(new Error('Error del FileReader al leer el archivo'));
     if (ext==='csv'||ext==='txt') reader.readAsText(file,'UTF-8'); else reader.readAsArrayBuffer(file);
   }
 
@@ -681,7 +682,8 @@ const APP = (() => {
         saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
         updateStatusBar();
         toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
-        if (sourceKey === 'detallado') navigate('dashboard'); else datos();
+        // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
+        if (sourceKey === 'detallado') navigate('dashboard'); else render();
       } catch(ex) {
         toast('❌ Error procesando archivo: '+(ex.message||ex),'error');
         console.error('[handleUploadSource]', ex);
