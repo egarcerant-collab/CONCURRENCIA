@@ -601,6 +601,41 @@ const APP = (() => {
     });
   }
 
+  // ── Columnas esenciales por fuente para reducir tamaño en Supabase ──────────
+  // PyP y Res202 pueden tener 60-120 columnas; solo guardamos las que se usan
+  const CLOUD_COLS = {
+    pyp: [
+      'Numero de identificacion del usuario',
+      'tipo_identificacion','primer_apellido','segundo_apellido',
+      'primer_nombre','segundo_nombre',
+      'Fecha Nacimiento','Sexo','Edad','Gestante',
+      'Clasificación del riesgo cardiovascular',
+      'clasificacion_riesgo_metabolico',
+      'clasificacion_riesgo_gestacional',
+      'semanas_gestacion','codigo_habilitacion_ips',
+      'codigo_municipio_residencia','municipio_residencia'
+    ],
+    res202: null, // null = guardar todo (se determinará según tamaño real)
+  };
+
+  function slimRows(sourceKey, rows) {
+    const cols = CLOUD_COLS[sourceKey];
+    if (!cols || !rows.length) return rows;
+    return rows.map(r => {
+      const o = {};
+      cols.forEach(c => { if (r[c] !== undefined) o[c] = r[c]; });
+      // Guardar también bajo nombre normalizado por si hay variación
+      Object.keys(r).forEach(k => {
+        const kn = String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+        cols.forEach(c => {
+          const cn = c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+          if (kn === cn && o[c] === undefined) o[c] = r[k];
+        });
+      });
+      return o;
+    });
+  }
+
   // Upload por fuente específica (desde tab Datos)
   function handleUploadSource(input, sourceKey) {
     const file = input.files[0]; if (!file) return;
@@ -609,18 +644,19 @@ const APP = (() => {
     readFile(file, (err, rows) => {
       if (err) { toast('❌ Error: '+err.message,'error'); return; }
       const stateKey = sourceKey === 'detallado' ? 'rows' : sourceKey+'Rows';
-      state[stateKey] = rows;
+      state[stateKey] = rows;          // Memoria: todas las columnas
       state.fileNames[sourceKey] = file.name;
       if (sourceKey === 'detallado') {
         state.meta = CALCS.extractMeta(rows);
       }
-      // Para detallado: marcar como manual tipo=1 para proteger vs auto-sync
       const meta = sourceKey === 'detallado'
         ? { source: 'manual-upload', tipoReporte: 1 }
         : {};
-      saveToServer(sourceKey.toUpperCase(), rows, file.name, meta);
+      // Nube: solo columnas esenciales (evita límite de 50MB de Supabase)
+      const rowsCloud = slimRows(sourceKey, rows);
+      saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
       updateStatusBar();
-      toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros`,'success');
+      toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros → ☁️ subiendo a Supabase…`,'success');
       if (sourceKey === 'detallado') navigate('dashboard'); else datos();
     });
   }
@@ -1667,14 +1703,19 @@ const APP = (() => {
       </div>`;
 
     // ── Banner PyP ──
+    const totalCruceE = resE.conPyP, totalCruceI = resI.conPyP;
+    const sinCruces   = hasPyP && (totalCruceE + totalCruceI) === 0;
     const pypBanner = hasPyP
-      ? `<div style="padding:7px 14px;background:#e8f8f5;border:1px solid #1abc9c;border-radius:8px;font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
-           🩺 <b>PyP Res. 3280 cargado</b> — ${fmtN(state.pypRows.length)} registros ·
-           EDA: <b>${resE.conPyP}/${dE.eda}</b> pacientes cruzados ·
-           IRA: <b>${resI.conPyP}/${dI.ira}</b> pacientes cruzados
+      ? `<div style="padding:8px 14px;background:${sinCruces?'#fff3e0':'#e8f8f5'};border:1px solid ${sinCruces?'#f39c12':'#1abc9c'};border-radius:8px;font-size:12px;margin-bottom:14px">
+           ${sinCruces
+             ? `⚠️ <b>PyP cargado (${fmtN(state.pypRows.length)} registros)</b> pero <b>0 pacientes cruzados</b> —
+                los documentos de la BD no coinciden con los de PyP. Verifica que el archivo sea del mismo período.`
+             : `🩺 <b>PyP Res. 3280 cargado</b> — ${fmtN(state.pypRows.length)} registros ·
+                EDA: <b>${totalCruceE}/${dE.eda}</b> cruzados ·
+                IRA: <b>${totalCruceI}/${dI.ira}</b> cruzados`}
          </div>`
       : `<div style="padding:7px 14px;background:#fef9e7;border:1px solid #f39c12;border-radius:8px;font-size:12px;margin-bottom:14px">
-           💡 Carga el archivo <b>PyP Res. 3280</b> en ⚙️ Datos para cruzar pacientes EDA/IRA con datos demográficos y de riesgo.
+           💡 Carga el archivo <b>PyP Res. 3280</b> en 🔐 Administrador para cruzar pacientes EDA/IRA con datos demográficos y de riesgo.
          </div>`;
 
     // ── Tabla de distribución por edad (cuando PyP disponible) ──
@@ -2812,10 +2853,10 @@ const APP = (() => {
                 onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
               <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
             </label>
-            ${loaded ? `<button onclick="APP.subirSupabase('${src.key}')"
-              style="padding:5px 12px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+            <button onclick="APP.subirSupabase('${src.key}')"
+              style="padding:5px 12px;background:${loaded?'#8e44ad':'#bbb'};color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:${loaded?'pointer':'default'};opacity:${loaded?'1':'0.55'}">
               ☁️ Subir a Supabase
-            </button>` : ''}
+            </button>
             ${loaded && src.key !== 'detallado'
               ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
               : ''}
@@ -2927,10 +2968,10 @@ const APP = (() => {
             <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
             <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
           </label>
-          ${loaded ? `<button onclick="APP.subirSupabase('${src.key}')"
-            style="padding:5px 12px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
+          <button onclick="APP.subirSupabase('${src.key}')"
+            style="padding:5px 12px;background:${loaded?'#8e44ad':'#bbb'};color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:${loaded?'pointer':'default'};opacity:${loaded?'1':'0.55'}">
             ☁️ Subir a Supabase
-          </button>` : ''}
+          </button>
           ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
         </div>
       </div>`;
@@ -3683,7 +3724,8 @@ const APP = (() => {
       toast(`☁️ Subiendo ${label} a Supabase…`, 'info');
       try {
         if (!window.SUPA_DB) { toast('❌ Supabase no disponible', 'error'); return; }
-        const ok = await window.SUPA_DB.supaUpload(table, rows, fname, {});
+        const rowsCloud = slimRows(sourceKey, rows); // reducir tamaño antes de subir
+        const ok = await window.SUPA_DB.supaUpload(table, rowsCloud, fname, {});
         if (ok) {
           state.uploadedAt[sourceKey] = Date.now();
           toast(`✅ ${label} subido a Supabase — ${fmtN(rows.length)} registros`, 'success');
