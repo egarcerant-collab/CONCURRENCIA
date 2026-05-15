@@ -2806,14 +2806,20 @@ const APP = (() => {
           ${loaded
             ? `<div style="color:${src.color};font-weight:700;font-size:12px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>`
             : `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
-          <label style="cursor:pointer;display:inline-block">
-            <input type="file" accept="${src.key==='pyp'?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}"
-              onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
-            <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
-          </label>
-          ${loaded && src.key !== 'detallado'
-            ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
-            : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:7px;align-items:center">
+            <label style="cursor:pointer;display:inline-block">
+              <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}"
+                onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
+              <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
+            </label>
+            ${loaded ? `<button onclick="APP.subirSupabase('${src.key}')"
+              style="padding:5px 12px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              ☁️ Subir a Supabase
+            </button>` : ''}
+            ${loaded && src.key !== 'detallado'
+              ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
+              : ''}
+          </div>
         </div>`;
     }
 
@@ -2916,11 +2922,17 @@ const APP = (() => {
         </div>
         ${loaded ? `<div style="color:${src.color};font-weight:700;font-size:13px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>` :
                    `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
-        <label style="cursor:pointer;display:inline-block">
-          <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
-          <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
-        </label>
-        ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <label style="cursor:pointer;display:inline-block">
+            <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
+            <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
+          </label>
+          ${loaded ? `<button onclick="APP.subirSupabase('${src.key}')"
+            style="padding:5px 12px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
+            ☁️ Subir a Supabase
+          </button>` : ''}
+          ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
+        </div>
       </div>`;
     }
 
@@ -3657,6 +3669,29 @@ const APP = (() => {
         inp.value = '';
         inp.focus();
         setTimeout(()=>{ if(err) err.textContent=''; },3000);
+      }
+    },
+    // ── Subir fuente específica a Supabase manualmente ───
+    subirSupabase: async (sourceKey) => {
+      const stateKey = sourceKey === 'detallado' ? 'rows' : sourceKey + 'Rows';
+      const rows = state[stateKey];
+      if (!rows || !rows.length) { toast('Sin datos en memoria para subir', 'error'); return; }
+      const src = SOURCES.find(s => s.key === sourceKey);
+      const label = src?.label || sourceKey;
+      const table = sourceKey === 'detallado' ? 'DATOS' : sourceKey.toUpperCase();
+      const fname = state.fileNames[sourceKey] || table;
+      toast(`☁️ Subiendo ${label} a Supabase…`, 'info');
+      try {
+        if (!window.SUPA_DB) { toast('❌ Supabase no disponible', 'error'); return; }
+        const ok = await window.SUPA_DB.supaUpload(table, rows, fname, {});
+        if (ok) {
+          state.uploadedAt[sourceKey] = Date.now();
+          toast(`✅ ${label} subido a Supabase — ${fmtN(rows.length)} registros`, 'success');
+        } else {
+          toast(`⚠️ No se pudo subir ${label}`, 'error');
+        }
+      } catch(e) {
+        toast(`❌ Error al subir: ${e.message||e}`, 'error');
       }
     },
     // ── Filtro de rango de edad EDA/IRA ──────────────────
