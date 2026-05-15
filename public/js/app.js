@@ -4,8 +4,9 @@
 // ============================================================
 const APP = (() => {
   let _mesClickHandler = null; // handler activo del dropdown de mes (evita acumulación)
-  let _edairaEnriched  = [];   // filas EDA+IRA enriquecidas con PyP (para exportar)
-  let _edairaAgeFilter = new Set(); // grupos etarios seleccionados (vacío = todos)
+  let _edairaEnriched   = [];   // filas EDA+IRA enriquecidas con PyP (para exportar)
+  let _edairaEdadDesde  = null; // filtro edad mínima (null = sin límite)
+  let _edairaEdadHasta  = null; // filtro edad máxima (null = sin límite)
 
   let state = {
     rows: [],         // DETALLADO_AUDITORIA (fuente principal)
@@ -15,6 +16,7 @@ const APP = (() => {
     cydRows: [],      // cyd.csv — crecimiento y desarrollo 0-5
     estanciaRows: [], // ESTANCIA DETALLADA — estancia por servicio
     pypRows: [],      // PyP Res. 3280 — Prevención y Promoción
+    res202Rows: [],   // Resolución 202 — Base auxiliar
     meta: { ips:[], anios:[], meses:[] },
     filters: { ips:'todos', anio:'todos', mes:'todos', meses:[], departamento:'todos', municipio:'todos' },
     tabFilters: {},    // filtros independientes por pestaña
@@ -39,7 +41,8 @@ const APP = (() => {
     { key:'dnt',       label:'Seguimiento Desnutrición (DNT)',   hint:'Seguimiento DNT.xlsx',                       icon:'🍽️', color:'#8e44ad', required:false },
     { key:'cyd',       label:'Crecimiento y Desarrollo (CyD)',   hint:'cyd.csv',                                    icon:'👶', color:'#27ae60', required:false },
     { key:'estancia',  label:'Estancia Detallada',               hint:'ESTANCIA DETALLADA ROSARIO PUMAREJO.xlsx',   icon:'🛏️', color:'#2980b9', required:false },
-    { key:'pyp',       label:'PyP — Prevención y Promoción (Res. 3280)', hint:'informe_4505_Consolidado.txt · .xlsx · .csv',  icon:'🩺', color:'#16a085', required:false },
+    { key:'pyp',    label:'PyP — Prevención y Promoción (Res. 3280)', hint:'informe_4505_Consolidado.txt · .xlsx · .csv', icon:'🩺', color:'#16a085', required:false },
+    { key:'res202', label:'Resolución 202',                           hint:'Res_202_....xlsx · .csv · .txt',              icon:'📄', color:'#e67e22', required:false },
   ];
 
   // ── UI helpers ──────────────────────────────────────────
@@ -642,7 +645,8 @@ const APP = (() => {
   function updateStatusBar() {
     const total = state.rows.length;
     const extra = (state.rcvRows.length?1:0)+(state.aiuRows.length?1:0)+
-                  (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0)+(state.pypRows.length?1:0);
+                  (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0)+
+                  (state.pypRows.length?1:0)+(state.res202Rows.length?1:0);
     // Ocultar siempre los botones de carga manual (se muestran solo en modo ?admin=1)
     const btnSupa  = document.getElementById('btn-save-supa');
     const btnCloud = document.getElementById('btn-save-cloud');
@@ -666,7 +670,7 @@ const APP = (() => {
   // Cargar datos SIEMPRE desde Supabase (fuente única y autoritativa)
   // localStorage solo como último recurso si Supabase es inaccesible
   async function loadSaved(silencioso = false) {
-    const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP'};
+    const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP', res202:'RES202'};
 
     const hasSupa = !!window.SUPA_DB;
     if (!silencioso) toast('☁️ Sincronizando con la nube...','info');
@@ -788,7 +792,8 @@ const APP = (() => {
       state.dntRows.length   ? `🍽️ DNT: ${fmtN(state.dntRows.length)}`  : null,
       state.cydRows.length   ? `🌱 CyD: ${fmtN(state.cydRows.length)}`   : null,
       state.estanciaRows.length ? `🛏️ Est: ${fmtN(state.estanciaRows.length)}` : null,
-      state.pypRows.length   ? `🩺 PyP: ${fmtN(state.pypRows.length)}`   : null,
+      state.pypRows.length    ? `🩺 PyP: ${fmtN(state.pypRows.length)}`     : null,
+      state.res202Rows.length ? `📄 202: ${fmtN(state.res202Rows.length)}` : null,
     ].filter(Boolean);
     // Calcular período de la base
     const fechaMax = state.meta.fechaMax || '';
@@ -1622,28 +1627,34 @@ const APP = (() => {
     const resI = enriquecerConPyP(dI.rows, 'IRA');
 
     // Guardar enriched combinado para exportar con filtro de edad
-    _edairaEnriched = [...resE.enriched, ...resI.enriched];
-    _edairaAgeFilter = new Set(); // resetear al re-renderizar
+    _edairaEnriched  = [...resE.enriched, ...resI.enriched];
+    _edairaEdadDesde = null; // resetear al re-renderizar
+    _edairaEdadHasta = null;
 
-    // ── Selector de grupo etario ──
-    const GRUPOS_EDAD = ['0-4','5-9','10-14','15-19','20-29','30-39','40-49','50-59','60-69','70+'];
+    // ── Selector de rango de edad libre ──
     const edadFilterUI = `
-      <div style="margin-bottom:12px;padding:10px 14px;background:#f8fafd;border:1px solid #d1dce8;border-radius:10px">
-        <div style="font-size:12px;font-weight:700;color:#1a4f7a;margin-bottom:8px">🔢 Filtrar por grupo etario <span style="font-weight:400;color:#888">(afecta la exportación)</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-          ${GRUPOS_EDAD.map(g=>`
-            <button class="edaira-age-btn" data-grupo="${g}" onclick="APP.toggleEdairaAge('${g}')"
-              style="padding:4px 11px;border:1px solid #d1dce8;border-radius:20px;background:#f0f4f8;cursor:pointer;font-size:11px;font-weight:600;color:#333;transition:all .15s">
-              ${g} años
-            </button>`).join('')}
-          <button onclick="APP.clearEdairaAge()"
-            style="padding:4px 11px;border:1px solid #aaa;border-radius:20px;background:#fff;cursor:pointer;font-size:11px;color:#666">
-            ↺ Todos
-          </button>
-          <span id="edaira-age-info" style="font-size:11px;color:#888;margin-left:6px">
-            Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros
-          </span>
+      <div style="margin-bottom:12px;padding:11px 16px;background:#f0f6ff;border:1px solid #c3d9f5;border-radius:10px;display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+        <span style="font-size:12px;font-weight:700;color:#1a4f7a;white-space:nowrap">🔢 Filtrar por edad:</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:12px;color:#555">Desde</label>
+          <input id="eda-edad-desde" type="number" min="0" max="120" placeholder="0"
+            style="width:64px;padding:5px 8px;border:1px solid #c3d9f5;border-radius:8px;font-size:13px;text-align:center">
+          <label style="font-size:12px;color:#555">Hasta</label>
+          <input id="eda-edad-hasta" type="number" min="0" max="120" placeholder="120"
+            style="width:64px;padding:5px 8px;border:1px solid #c3d9f5;border-radius:8px;font-size:13px;text-align:center">
+          <label style="font-size:12px;color:#555">años</label>
         </div>
+        <button onclick="APP.aplicarEdairaEdad()"
+          style="padding:5px 16px;background:#1a4f7a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">
+          ✅ Aplicar
+        </button>
+        <button onclick="APP.limpiarEdairaEdad()"
+          style="padding:5px 12px;background:#fff;border:1px solid #bbb;border-radius:8px;cursor:pointer;font-size:12px;color:#555">
+          ↺ Limpiar
+        </button>
+        <span id="edaira-age-info" style="font-size:11px;color:#888">
+          Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros
+        </span>
       </div>`;
 
     // ── Banner PyP ──
@@ -2867,6 +2878,7 @@ const APP = (() => {
           ${state.cydRows.length    ? kpi('CyD',fmtN(state.cydRows.length),'registros',state.fileNames.cyd||'','green','🌱') : ''}
           ${state.estanciaRows.length ? kpi('Estancia',fmtN(state.estanciaRows.length),'registros',state.fileNames.estancia||'','teal','🛏️') : ''}
           ${state.pypRows.length    ? kpi('PyP 3280',fmtN(state.pypRows.length),'registros',state.fileNames.pyp||'','green','🩺') : ''}
+          ${state.res202Rows.length ? kpi('Res. 202',fmtN(state.res202Rows.length),'registros',state.fileNames.res202||'','orange','📄') : ''}
         </div>
       </div>` : ''}`;
   }
@@ -2876,7 +2888,7 @@ const APP = (() => {
     // Verificar estado de Drive al abrir la pestaña
     setTimeout(() => APP.driveCheckStatus && APP.driveCheckStatus(), 300);
     const totalMain = state.rows.length;
-    const extras = [state.rcvRows,state.aiuRows,state.dntRows,state.cydRows,state.estanciaRows,state.pypRows];
+    const extras = [state.rcvRows,state.aiuRows,state.dntRows,state.cydRows,state.estanciaRows,state.pypRows,state.res202Rows];
     const extraTotal = extras.reduce((a,r)=>a+r.length,0);
 
     function sourceCard(src) {
@@ -2896,7 +2908,7 @@ const APP = (() => {
         ${loaded ? `<div style="color:${src.color};font-weight:700;font-size:13px;margin-bottom:10px">✅ ${fmtN(count)} registros — ${fname}</div>` :
                    `<div style="color:#aaa;font-size:12px;margin-bottom:10px">Sin datos cargados</div>`}
         <label style="cursor:pointer;display:inline-block">
-          <input type="file" accept="${src.key==='pyp'?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
+          <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
           <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
         </label>
         ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
@@ -2991,7 +3003,8 @@ const APP = (() => {
           ${state.dntRows.length   ? kpi('DNT',       fmtN(state.dntRows.length),  'registros',state.fileNames.dnt||'',   'purple','🍽️') : ''}
           ${state.cydRows.length   ? kpi('CyD',       fmtN(state.cydRows.length),  'registros',state.fileNames.cyd||'',   'green', '🌱')  : ''}
           ${state.estanciaRows.length ? kpi('Estancia',fmtN(state.estanciaRows.length),'registros',state.fileNames.estancia||'','teal','🛏️') : ''}
-          ${state.pypRows.length   ? kpi('PyP 3280',fmtN(state.pypRows.length),'registros',state.fileNames.pyp||'','green','🩺') : ''}
+          ${state.pypRows.length    ? kpi('PyP 3280',fmtN(state.pypRows.length),'registros',state.fileNames.pyp||'','green','🩺') : ''}
+          ${state.res202Rows.length ? kpi('Res. 202',fmtN(state.res202Rows.length),'registros',state.fileNames.res202||'','orange','📄') : ''}
         </div>
         <h4 style="font-size:13px;color:#555;margin-bottom:8px">Vista previa DETALLADO (primeros 50 registros)</h4>
         ${buildTable(state.rows.slice(0,50), null, 50)}
@@ -3395,15 +3408,20 @@ const APP = (() => {
           return project(d.rows || []);
         }
         if (tab === 'edaira') {
-          // Usar las filas enriquecidas con PyP y Grupo Etario
+          // Usar filas enriquecidas con PyP, Grupo Etario y En PyP 3280
           const base = _edairaEnriched.length ? _edairaEnriched : (() => {
             const dE = CALCS.calcEDA(state.rows, f);
             const dI = CALCS.calcIRA(state.rows, f);
             return [...(dE.rows||[]).map(r=>({...r,Ruta:'EDA'})), ...(dI.rows||[]).map(r=>({...r,Ruta:'IRA'}))];
           })();
-          // Aplicar filtro de edad si hay grupos seleccionados
-          return _edairaAgeFilter.size > 0
-            ? base.filter(r => _edairaAgeFilter.has(String(r['Grupo Etario']||'')))
+          // Aplicar filtro de rango de edad si está activo
+          const hayFiltro = _edairaEdadDesde !== null || _edairaEdadHasta !== null;
+          return hayFiltro
+            ? base.filter(r => {
+                const edad = Number(r['Edad'] ?? 0);
+                return (_edairaEdadDesde === null || edad >= _edairaEdadDesde) &&
+                       (_edairaEdadHasta === null || edad <= _edairaEdadHasta);
+              })
             : base;
         }
         if (tab === 'enfermedades') {
@@ -3632,31 +3650,38 @@ const APP = (() => {
         setTimeout(()=>{ if(err) err.textContent=''; },3000);
       }
     },
-    // ── Filtro de edad EDA/IRA ────────────────────────────
-    toggleEdairaAge: (grupo) => {
-      if (_edairaAgeFilter.has(grupo)) _edairaAgeFilter.delete(grupo);
-      else _edairaAgeFilter.add(grupo);
-      // Actualizar botones visualmente
-      document.querySelectorAll('.edaira-age-btn').forEach(b => {
-        const sel = _edairaAgeFilter.has(b.dataset.grupo);
-        b.style.background = sel ? '#1a4f7a' : '#f0f4f8';
-        b.style.color       = sel ? '#fff'    : '#333';
-        b.style.borderColor = sel ? '#1a4f7a' : '#d1dce8';
-      });
-      // Actualizar info de conteo
-      const filtrado = _edairaAgeFilter.size > 0
-        ? _edairaEnriched.filter(r => _edairaAgeFilter.has(String(r['Grupo Etario']||'')))
+    // ── Filtro de rango de edad EDA/IRA ──────────────────
+    aplicarEdairaEdad: () => {
+      const dEl = document.getElementById('eda-edad-desde');
+      const hEl = document.getElementById('eda-edad-hasta');
+      _edairaEdadDesde = dEl && dEl.value !== '' ? Number(dEl.value) : null;
+      _edairaEdadHasta = hEl && hEl.value !== '' ? Number(hEl.value) : null;
+      const hayFiltro = _edairaEdadDesde !== null || _edairaEdadHasta !== null;
+      const filtrado = hayFiltro
+        ? _edairaEnriched.filter(r => {
+            const edad = Number(r['Edad'] ?? 0);
+            return (_edairaEdadDesde === null || edad >= _edairaEdadDesde) &&
+                   (_edairaEdadHasta === null || edad <= _edairaEdadHasta);
+          })
         : _edairaEnriched;
       const info = document.getElementById('edaira-age-info');
-      if (info) info.innerHTML = _edairaAgeFilter.size > 0
-        ? `Grupos: <b>${[..._edairaAgeFilter].join(', ')}</b> — exporta <b>${fmtN(filtrado.length)}</b> registros`
-        : `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
+      if (info) {
+        if (hayFiltro) {
+          const d = _edairaEdadDesde ?? 0;
+          const h = _edairaEdadHasta ?? '∞';
+          info.innerHTML = `✅ <b>${d}–${h} años</b> → <b style="color:#1a4f7a">${fmtN(filtrado.length)}</b> registros para exportar`;
+        } else {
+          info.innerHTML = `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
+        }
+      }
+      toast(`Filtro aplicado: ${fmtN(filtrado.length)} registros EDA/IRA`, 'success');
     },
-    clearEdairaAge: () => {
-      _edairaAgeFilter = new Set();
-      document.querySelectorAll('.edaira-age-btn').forEach(b => {
-        b.style.background = '#f0f4f8'; b.style.color = '#333'; b.style.borderColor = '#d1dce8';
-      });
+    limpiarEdairaEdad: () => {
+      _edairaEdadDesde = null; _edairaEdadHasta = null;
+      const dEl = document.getElementById('eda-edad-desde');
+      const hEl = document.getElementById('eda-edad-hasta');
+      if (dEl) dEl.value = '';
+      if (hEl) hEl.value = '';
       const info = document.getElementById('edaira-age-info');
       if (info) info.innerHTML = `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
     },
