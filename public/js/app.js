@@ -2826,7 +2826,9 @@ const APP = (() => {
       }
 
       // Crear panel en document.body — completamente fuera del overflow:hidden del tab
-      const btn = document.getElementById('mes-toggle-btn');
+      // Buscar el botón SOLO en el tab activo (evita tomar el de un tab oculto con pos x≈0)
+      const btn = document.querySelector('#tab-' + state.activeTab + ' #mes-toggle-btn')
+               || document.querySelector('.tab-panel.active #mes-toggle-btn');
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
       const mesesSel = state.filters.meses || [];
@@ -2834,9 +2836,12 @@ const APP = (() => {
 
       const p = document.createElement('div');
       p.id = 'mes-panel';
-      p.style.cssText = `position:fixed;top:${rect.bottom+4}px;left:${rect.left}px;background:#fff;`+
+      // Alinear derecha del panel con derecha del botón (evita salirse de pantalla)
+      const panelW = 180;
+      const leftPos = Math.max(4, rect.right - panelW);
+      p.style.cssText = `position:fixed;top:${rect.bottom+4}px;left:${leftPos}px;background:#fff;`+
         `border:1px solid #d1dce8;border-radius:10px;padding:6px 2px;z-index:99999;`+
-        `min-width:175px;box-shadow:0 6px 24px rgba(0,0,0,.18);`;
+        `min-width:${panelW}px;box-shadow:0 6px 24px rgba(0,0,0,.18);`;
 
       p.innerHTML = `
         <div style="padding:4px 10px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eef2f7;margin-bottom:4px">
@@ -2859,7 +2864,8 @@ const APP = (() => {
       if (_mesClickHandler) document.removeEventListener('click', _mesClickHandler);
       _mesClickHandler = (ev) => {
         const pp = document.getElementById('mes-panel');
-        const bb = document.getElementById('mes-toggle-btn');
+        const bb = document.querySelector('#tab-' + state.activeTab + ' #mes-toggle-btn')
+                || document.querySelector('.tab-panel.active #mes-toggle-btn');
         if (pp && !pp.contains(ev.target) && (!bb || !bb.contains(ev.target))) {
           pp.remove();
           state._mesOpen = false;
