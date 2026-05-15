@@ -4,6 +4,8 @@
 // ============================================================
 const APP = (() => {
   let _mesClickHandler = null; // handler activo del dropdown de mes (evita acumulación)
+  let _edairaEnriched  = [];   // filas EDA+IRA enriquecidas con PyP (para exportar)
+  let _edairaAgeFilter = new Set(); // grupos etarios seleccionados (vacío = todos)
 
   let state = {
     rows: [],         // DETALLADO_AUDITORIA (fuente principal)
@@ -1597,6 +1599,12 @@ const APP = (() => {
           'Edad':                  edadRaw || '',
           'Sexo':                  sexo || CALCS.get(r,'Sexo')||'',
           'Gestante PyP':          esGest ? 'Sí' : (hasPyP && pyp ? 'No' : '—'),
+          'En PyP 3280':           hasPyP ? (pyp ? 'Sí' : 'No') : '—',
+          'Grupo Etario':          edadRaw < 5  ? '0-4'   : edadRaw < 10 ? '5-9'   :
+                                   edadRaw < 15 ? '10-14' : edadRaw < 20 ? '15-19' :
+                                   edadRaw < 30 ? '20-29' : edadRaw < 40 ? '30-39' :
+                                   edadRaw < 50 ? '40-49' : edadRaw < 60 ? '50-59' :
+                                   edadRaw < 70 ? '60-69' : '70+',
           'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||(pyp?CALCS.get(pyp,'Dirección')||'':''),
           'Municipio':             CALCS.get(r,'Municipio')||'',
           'Fecha Ingreso':         CALCS.get(r,'Fecha Ingreso')||'',
@@ -1612,6 +1620,31 @@ const APP = (() => {
 
     const resE = enriquecerConPyP(dE.rows, 'EDA');
     const resI = enriquecerConPyP(dI.rows, 'IRA');
+
+    // Guardar enriched combinado para exportar con filtro de edad
+    _edairaEnriched = [...resE.enriched, ...resI.enriched];
+    _edairaAgeFilter = new Set(); // resetear al re-renderizar
+
+    // ── Selector de grupo etario ──
+    const GRUPOS_EDAD = ['0-4','5-9','10-14','15-19','20-29','30-39','40-49','50-59','60-69','70+'];
+    const edadFilterUI = `
+      <div style="margin-bottom:12px;padding:10px 14px;background:#f8fafd;border:1px solid #d1dce8;border-radius:10px">
+        <div style="font-size:12px;font-weight:700;color:#1a4f7a;margin-bottom:8px">🔢 Filtrar por grupo etario <span style="font-weight:400;color:#888">(afecta la exportación)</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          ${GRUPOS_EDAD.map(g=>`
+            <button class="edaira-age-btn" data-grupo="${g}" onclick="APP.toggleEdairaAge('${g}')"
+              style="padding:4px 11px;border:1px solid #d1dce8;border-radius:20px;background:#f0f4f8;cursor:pointer;font-size:11px;font-weight:600;color:#333;transition:all .15s">
+              ${g} años
+            </button>`).join('')}
+          <button onclick="APP.clearEdairaAge()"
+            style="padding:4px 11px;border:1px solid #aaa;border-radius:20px;background:#fff;cursor:pointer;font-size:11px;color:#666">
+            ↺ Todos
+          </button>
+          <span id="edaira-age-info" style="font-size:11px;color:#888;margin-left:6px">
+            Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros
+          </span>
+        </div>
+      </div>`;
 
     // ── Banner PyP ──
     const pypBanner = hasPyP
@@ -1641,7 +1674,7 @@ const APP = (() => {
       </div>`;
     }
 
-    el.innerHTML = `${filterBar()}${pypBanner}
+    el.innerHTML = `${filterBar()}${pypBanner}${edadFilterUI}
       <!-- EDA -->
       <div class="section-title" style="margin-bottom:14px"><span>💊</span> EDA — Enfermedad Diarreica Aguda</div>
       <div class="kpi-grid">
@@ -3362,14 +3395,16 @@ const APP = (() => {
           return project(d.rows || []);
         }
         if (tab === 'edaira') {
-          const dE = CALCS.calcEDA(state.rows, f);
-          const dI = CALCS.calcIRA(state.rows, f);
-          const mkRows = (rows, ruta) => rows.map(r => ({
-            ...(() => { const o={}; BASE.forEach(c=>{o[c]=CALCS.get(r,c)??'';}); return o; })(),
-            'IPS Primaria': CALCS.get(r,'IPS Primaria')||CALCS.get(r,'IPS')||'',
-            'Ruta': ruta,
-          }));
-          return [...mkRows(dE.rows||[],'EDA'), ...mkRows(dI.rows||[],'IRA')];
+          // Usar las filas enriquecidas con PyP y Grupo Etario
+          const base = _edairaEnriched.length ? _edairaEnriched : (() => {
+            const dE = CALCS.calcEDA(state.rows, f);
+            const dI = CALCS.calcIRA(state.rows, f);
+            return [...(dE.rows||[]).map(r=>({...r,Ruta:'EDA'})), ...(dI.rows||[]).map(r=>({...r,Ruta:'IRA'}))];
+          })();
+          // Aplicar filtro de edad si hay grupos seleccionados
+          return _edairaAgeFilter.size > 0
+            ? base.filter(r => _edairaAgeFilter.has(String(r['Grupo Etario']||'')))
+            : base;
         }
         if (tab === 'enfermedades') {
           // Combinar todas las enfermedades trazadoras
@@ -3596,6 +3631,34 @@ const APP = (() => {
         inp.focus();
         setTimeout(()=>{ if(err) err.textContent=''; },3000);
       }
+    },
+    // ── Filtro de edad EDA/IRA ────────────────────────────
+    toggleEdairaAge: (grupo) => {
+      if (_edairaAgeFilter.has(grupo)) _edairaAgeFilter.delete(grupo);
+      else _edairaAgeFilter.add(grupo);
+      // Actualizar botones visualmente
+      document.querySelectorAll('.edaira-age-btn').forEach(b => {
+        const sel = _edairaAgeFilter.has(b.dataset.grupo);
+        b.style.background = sel ? '#1a4f7a' : '#f0f4f8';
+        b.style.color       = sel ? '#fff'    : '#333';
+        b.style.borderColor = sel ? '#1a4f7a' : '#d1dce8';
+      });
+      // Actualizar info de conteo
+      const filtrado = _edairaAgeFilter.size > 0
+        ? _edairaEnriched.filter(r => _edairaAgeFilter.has(String(r['Grupo Etario']||'')))
+        : _edairaEnriched;
+      const info = document.getElementById('edaira-age-info');
+      if (info) info.innerHTML = _edairaAgeFilter.size > 0
+        ? `Grupos: <b>${[..._edairaAgeFilter].join(', ')}</b> — exporta <b>${fmtN(filtrado.length)}</b> registros`
+        : `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
+    },
+    clearEdairaAge: () => {
+      _edairaAgeFilter = new Set();
+      document.querySelectorAll('.edaira-age-btn').forEach(b => {
+        b.style.background = '#f0f4f8'; b.style.color = '#333'; b.style.borderColor = '#d1dce8';
+      });
+      const info = document.getElementById('edaira-age-info');
+      if (info) info.innerHTML = `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
     },
     adminLogout: () => {
       sessionStorage.removeItem('adminAuth_dusakawi');
