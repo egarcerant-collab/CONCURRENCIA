@@ -309,6 +309,12 @@ const APP = (() => {
 
   // ── NAVEGACIÓN ───────────────────────────────────────────
   function navigate(tab) {
+    // Limpiar dropdown de mes al cambiar de pestaña (evita que panel fantasma bloquee el nuevo tab)
+    const oldPanel = document.getElementById('mes-panel');
+    if (oldPanel) oldPanel.remove();
+    if (_mesClickHandler) { document.removeEventListener('click', _mesClickHandler); _mesClickHandler = null; }
+    state._mesOpen = false;
+
     state.activeTab = tab;
     document.querySelectorAll('#sidebar nav a').forEach(a=>a.classList.toggle('active',a.dataset.tab===tab));
     document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+tab));
