@@ -176,6 +176,15 @@ const APP = (() => {
           return r;
         }
         if (tab === 'edaira') {
+          // Si hay filtro de edad activo, usar _edairaEnriched filtrado para el conteo real
+          const hayFiltroEdad = _edairaEdadDesde !== null || _edairaEdadHasta !== null;
+          if (hayFiltroEdad && _edairaEnriched.length) {
+            return _edairaEnriched.filter(r => {
+              const edad = Number(r['Edad'] ?? 0);
+              return (_edairaEdadDesde === null || edad >= _edairaEdadDesde) &&
+                     (_edairaEdadHasta === null || edad <= _edairaEdadHasta);
+            });
+          }
           const dE = CALCS.calcEDA?.(state.rows, filters)||{rows:[]};
           const dI = CALCS.calcIRA?.(state.rows, filters)||{rows:[]};
           return [...(dE.rows||[]),...(dI.rows||[])];
@@ -3664,6 +3673,7 @@ const APP = (() => {
                    (_edairaEdadHasta === null || edad <= _edairaEdadHasta);
           })
         : _edairaEnriched;
+      // Actualizar info bajo el filtro
       const info = document.getElementById('edaira-age-info');
       if (info) {
         if (hayFiltro) {
@@ -3674,7 +3684,23 @@ const APP = (() => {
           info.innerHTML = `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
         }
       }
-      toast(`Filtro aplicado: ${fmtN(filtrado.length)} registros EDA/IRA`, 'success');
+      // Actualizar el botón exportar en la barra de filtros (topbar)
+      const tabData = computeTabData();
+      const btnExp = document.querySelector('.tab-panel.active .topbar-export-btn, #tab-edaira button[onclick*="exportTab"]');
+      // Actualizar el badge de conteo dinámico en el filterBar
+      const countBadge = document.getElementById('filter-count-badge');
+      if (countBadge) countBadge.textContent = fmtN(filtrado.length) + (hayFiltro ? ' (filtrado)' : '');
+      // Re-renderizar filterBar para que el botón refleje el nuevo conteo
+      const filterBarEl = document.querySelector('#tab-edaira .filter-bar, #tab-edaira > div:first-child');
+      // Actualizar solo el texto del botón exportar dentro del tab activo
+      const exportBtns = document.querySelectorAll('#tab-edaira button');
+      exportBtns.forEach(b => {
+        if (b.textContent.includes('Exportar EDA/IRA') || b.textContent.includes('EDA/IRA')) {
+          const n = hayFiltro ? filtrado.length : _edairaEnriched.length;
+          b.textContent = `⬇️ Exportar EDA/IRA (${fmtN(n)})`;
+        }
+      });
+      toast(`✅ Filtro aplicado: ${fmtN(filtrado.length)} registros EDA/IRA`, 'success');
     },
     limpiarEdairaEdad: () => {
       _edairaEdadDesde = null; _edairaEdadHasta = null;
@@ -3684,6 +3710,14 @@ const APP = (() => {
       if (hEl) hEl.value = '';
       const info = document.getElementById('edaira-age-info');
       if (info) info.innerHTML = `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
+      // Restaurar botón exportar
+      const exportBtns = document.querySelectorAll('#tab-edaira button');
+      exportBtns.forEach(b => {
+        if (b.textContent.includes('Exportar EDA/IRA')) {
+          b.textContent = `⬇️ Exportar EDA/IRA (${fmtN(_edairaEnriched.length)})`;
+        }
+      });
+      toast('Filtro de edad eliminado', 'info');
     },
     adminLogout: () => {
       sessionStorage.removeItem('adminAuth_dusakawi');
