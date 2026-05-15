@@ -3,6 +3,8 @@
 // Fuentes: DETALLADO (principal), RCV, AIU, DNT, CYD, ESTANCIA
 // ============================================================
 const APP = (() => {
+  let _mesClickHandler = null; // handler activo del dropdown de mes (evita acumulación)
+
   let state = {
     rows: [],         // DETALLADO_AUDITORIA (fuente principal)
     rcvRows: [],      // BD_RCV — ruta cardiovascular
@@ -2808,9 +2810,14 @@ const APP = (() => {
       render();
     },
     toggleMesDropdown: () => {
-      // Si ya existe, eliminarlo (toggle off)
+      // Si ya existe → cerrar (toggle off) y limpiar handler
       const existing = document.getElementById('mes-panel');
-      if (existing) { existing.remove(); state._mesOpen = false; return; }
+      if (existing) {
+        existing.remove();
+        state._mesOpen = false;
+        if (_mesClickHandler) { document.removeEventListener('click', _mesClickHandler); _mesClickHandler = null; }
+        return;
+      }
 
       // Crear panel en document.body — completamente fuera del overflow:hidden del tab
       const btn = document.getElementById('mes-toggle-btn');
@@ -2842,21 +2849,25 @@ const APP = (() => {
       document.body.appendChild(p);
       state._mesOpen = true;
 
-      // Cerrar al hacer clic fuera del panel y del botón
-      const handler = (ev) => {
+      // Limpiar handler anterior (evita acumulación) y registrar uno nuevo
+      if (_mesClickHandler) document.removeEventListener('click', _mesClickHandler);
+      _mesClickHandler = (ev) => {
         const pp = document.getElementById('mes-panel');
         const bb = document.getElementById('mes-toggle-btn');
         if (pp && !pp.contains(ev.target) && (!bb || !bb.contains(ev.target))) {
-          pp.remove(); state._mesOpen = false;
-          document.removeEventListener('click', handler);
+          pp.remove();
+          state._mesOpen = false;
+          document.removeEventListener('click', _mesClickHandler);
+          _mesClickHandler = null;
         }
       };
-      setTimeout(() => document.addEventListener('click', handler), 20);
+      setTimeout(() => document.addEventListener('click', _mesClickHandler), 20);
     },
     toggleMes: (k, checked) => {
-      // Cerrar panel antes de re-render y reabrirlo después
+      // Limpiar panel y handler antes del re-render
       const panel = document.getElementById('mes-panel');
       if (panel) panel.remove();
+      if (_mesClickHandler) { document.removeEventListener('click', _mesClickHandler); _mesClickHandler = null; }
       const meses = [...(state.filters.meses||[])];
       const key = String(k).padStart(2,'0');
       if (checked) { if (!meses.includes(key)) meses.push(key); }
@@ -2864,11 +2875,12 @@ const APP = (() => {
       state.filters.meses = meses;
       state._mesOpen = false;
       render();
-      // Reabrir dropdown para que el usuario pueda seguir seleccionando
-      setTimeout(() => { const APP_ref = window.APP||APP; if(APP_ref) APP_ref.toggleMesDropdown(); }, 40);
+      // Reabrir dropdown para multi-selección (handler limpio)
+      setTimeout(() => { if (window.APP) window.APP.toggleMesDropdown(); }, 50);
     },
     clearMeses: () => {
       const p = document.getElementById('mes-panel'); if(p) p.remove();
+      if (_mesClickHandler) { document.removeEventListener('click', _mesClickHandler); _mesClickHandler = null; }
       state.filters.meses=[]; state._mesOpen=false; render();
     },
     // ── Exportar UCI con selección de tipos ─────────────────
