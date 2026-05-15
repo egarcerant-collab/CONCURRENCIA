@@ -12,6 +12,7 @@ const APP = (() => {
     dntRows: [],      // Seguimiento DNT — desnutrición SIVIGILA
     cydRows: [],      // cyd.csv — crecimiento y desarrollo 0-5
     estanciaRows: [], // ESTANCIA DETALLADA — estancia por servicio
+    pypRows: [],      // PyP Res. 3280 — Prevención y Promoción
     meta: { ips:[], anios:[], meses:[] },
     filters: { ips:'todos', anio:'todos', mes:'todos', meses:[], departamento:'todos', municipio:'todos' },
     tabFilters: {},    // filtros independientes por pestaña
@@ -36,6 +37,7 @@ const APP = (() => {
     { key:'dnt',       label:'Seguimiento Desnutrición (DNT)',   hint:'Seguimiento DNT.xlsx',                       icon:'🍽️', color:'#8e44ad', required:false },
     { key:'cyd',       label:'Crecimiento y Desarrollo (CyD)',   hint:'cyd.csv',                                    icon:'👶', color:'#27ae60', required:false },
     { key:'estancia',  label:'Estancia Detallada',               hint:'ESTANCIA DETALLADA ROSARIO PUMAREJO.xlsx',   icon:'🛏️', color:'#2980b9', required:false },
+    { key:'pyp',       label:'PyP — Prevención y Promoción (Res. 3280)', hint:'Reporte_PyP_3280_....xlsx / .csv',  icon:'🩺', color:'#16a085', required:false },
   ];
 
   // ── UI helpers ──────────────────────────────────────────
@@ -547,7 +549,7 @@ const APP = (() => {
   function updateStatusBar() {
     const total = state.rows.length;
     const extra = (state.rcvRows.length?1:0)+(state.aiuRows.length?1:0)+
-                  (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0);
+                  (state.dntRows.length?1:0)+(state.cydRows.length?1:0)+(state.estanciaRows.length?1:0)+(state.pypRows.length?1:0);
     // Ocultar siempre los botones de carga manual (se muestran solo en modo ?admin=1)
     const btnSupa  = document.getElementById('btn-save-supa');
     const btnCloud = document.getElementById('btn-save-cloud');
@@ -693,6 +695,7 @@ const APP = (() => {
       state.dntRows.length   ? `🍽️ DNT: ${fmtN(state.dntRows.length)}`  : null,
       state.cydRows.length   ? `🌱 CyD: ${fmtN(state.cydRows.length)}`   : null,
       state.estanciaRows.length ? `🛏️ Est: ${fmtN(state.estanciaRows.length)}` : null,
+      state.pypRows.length   ? `🩺 PyP: ${fmtN(state.pypRows.length)}`   : null,
     ].filter(Boolean);
     // Calcular período de la base
     const fechaMax = state.meta.fechaMax || '';
@@ -1441,54 +1444,142 @@ const APP = (() => {
     if (!state.rows.length) { el.innerHTML = noData(); return; }
     const dE = CALCS.calcEDA(state.rows, state.filters);
     const dI = CALCS.calcIRA(state.rows, state.filters);
-    el.innerHTML = `${filterBar()}
+
+    // ── Cruce con PyP (Res. 3280) por Número de Identificación ──────────────
+    const hasPyP = state.pypRows.length > 0;
+    const pypByID = {};
+    if (hasPyP) {
+      state.pypRows.forEach(r => {
+        const id = String(
+          CALCS.get(r,'Número de identificación del usuario') ||
+          CALCS.get(r,'Numero identificacion del usuario') ||
+          CALCS.get(r,'Numero Identificacion') || ''
+        ).trim();
+        if (id) pypByID[id] = r;
+      });
+    }
+
+    // Enriquece filas con datos PyP y construye distribución por edad
+    function enriquecerConPyP(rows, ruta) {
+      const conteo = {};
+      rows.forEach(r => { const id = String(CALCS.get(r,'Numero Identificacion')||''); conteo[id] = (conteo[id]||0)+1; });
+      const porEdad = {'0-4':0,'5-9':0,'10-14':0,'15-19':0,'20-29':0,'30-39':0,'40-49':0,'50-59':0,'60-69':0,'70+':0};
+      const porSexo = {M:0, F:0, Otro:0};
+      let gestantes = 0, conPyP = 0;
+      const enriched = rows.map(r => {
+        const id = String(CALCS.get(r,'Numero Identificacion')||'').trim();
+        const pyp = hasPyP ? pypByID[id] : null;
+        if (pyp) conPyP++;
+        // Edad: primero del registro hospitalario, luego de PyP
+        const edadRaw = CALCS.safeNum(CALCS.get(r,'Edad') || (pyp ? CALCS.get(pyp,'Edad') : 0));
+        const sexo    = String(CALCS.get(r,'Sexo') || (pyp ? CALCS.get(pyp,'Sexo') : '')).toUpperCase().trim();
+        const esGest  = hasPyP && pyp && (CALCS.get(pyp,'Gestante') === '1' || CALCS.get(pyp,'Gestante') === 1);
+        // Acumular distribuciones
+        if      (edadRaw < 5)  porEdad['0-4']++;
+        else if (edadRaw < 10) porEdad['5-9']++;
+        else if (edadRaw < 15) porEdad['10-14']++;
+        else if (edadRaw < 20) porEdad['15-19']++;
+        else if (edadRaw < 30) porEdad['20-29']++;
+        else if (edadRaw < 40) porEdad['30-39']++;
+        else if (edadRaw < 50) porEdad['40-49']++;
+        else if (edadRaw < 60) porEdad['50-59']++;
+        else if (edadRaw < 70) porEdad['60-69']++;
+        else                   porEdad['70+']++;
+        if (sexo === 'M' || sexo === 'MASCULINO') porSexo.M++;
+        else if (sexo === 'F' || sexo === 'FEMENINO') porSexo.F++;
+        else porSexo.Otro++;
+        if (esGest) gestantes++;
+        return {
+          'IPS Primaria':          CALCS.get(r,'IPS Primaria')||CALCS.get(r,'IPS')||'',
+          'Numero Identificacion': id,
+          'Nombre Paciente':       CALCS.get(r,'Nombre Paciente')||'',
+          'Edad':                  edadRaw || '',
+          'Sexo':                  sexo || CALCS.get(r,'Sexo')||'',
+          'Gestante PyP':          esGest ? 'Sí' : (hasPyP && pyp ? 'No' : '—'),
+          'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||(pyp?CALCS.get(pyp,'Dirección')||'':''),
+          'Municipio':             CALCS.get(r,'Municipio')||'',
+          'Fecha Ingreso':         CALCS.get(r,'Fecha Ingreso')||'',
+          'Fecha Egreso':          CALCS.get(r,'Fecha Egreso')||'',
+          'IPS':                   CALCS.get(r,'IPS')||'',
+          'Recuento':              conteo[id]||1,
+          'Ruta':                  ruta,
+          ...(hasPyP && pyp ? {'Riesgo CV PyP': CALCS.get(pyp,'Clasificación del riesgo cardiovascular')||''} : {}),
+        };
+      });
+      return { enriched, porEdad, porSexo, gestantes, conPyP };
+    }
+
+    const resE = enriquecerConPyP(dE.rows, 'EDA');
+    const resI = enriquecerConPyP(dI.rows, 'IRA');
+
+    // ── Banner PyP ──
+    const pypBanner = hasPyP
+      ? `<div style="padding:7px 14px;background:#e8f8f5;border:1px solid #1abc9c;border-radius:8px;font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+           🩺 <b>PyP Res. 3280 cargado</b> — ${fmtN(state.pypRows.length)} registros ·
+           EDA: <b>${resE.conPyP}/${dE.eda}</b> pacientes cruzados ·
+           IRA: <b>${resI.conPyP}/${dI.ira}</b> pacientes cruzados
+         </div>`
+      : `<div style="padding:7px 14px;background:#fef9e7;border:1px solid #f39c12;border-radius:8px;font-size:12px;margin-bottom:14px">
+           💡 Carga el archivo <b>PyP Res. 3280</b> en ⚙️ Datos para cruzar pacientes EDA/IRA con datos demográficos y de riesgo.
+         </div>`;
+
+    // ── Tabla de distribución por edad (cuando PyP disponible) ──
+    function tablaEdad(porEdad, titulo, color) {
+      if (!hasPyP) return '';
+      const total = Object.values(porEdad).reduce((a,b)=>a+b,0);
+      const rows = Object.entries(porEdad).filter(([,v])=>v>0).map(([k,v])=>`
+        <tr><td>${k} años</td>
+            <td style="text-align:center;font-weight:700;color:${color}">${fmtN(v)}</td>
+            <td style="text-align:center">${total>0?((v/total)*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+      return `<div class="data-table-wrap" style="margin-top:12px">
+        <h4>${titulo}</h4>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Grupo Etario</th><th style="text-align:center">Casos</th><th style="text-align:center">%</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+    }
+
+    el.innerHTML = `${filterBar()}${pypBanner}
+      <!-- EDA -->
       <div class="section-title" style="margin-bottom:14px"><span>💊</span> EDA — Enfermedad Diarreica Aguda</div>
       <div class="kpi-grid">
-        ${kpi('Casos EDA',fmtN(dE.eda),'',`${fmt(dE.tasa)}% del total`,'orange','💊','CIE-10: A00-A09 (Enfermedades intestinales infecciosas)\nFuente: campo Diagnostico\nServicios: Hosp. Adultos, Pediátrica, Observación.')}
-        ${kpi('Tasa EDA',dE.tasa,'%','','orange','📊','Fórmula: (Casos EDA ÷ Total Hospitalizados) × 100\nFuente: campo Diagnostico, CIE-10: A00-A09.')}
+        ${kpi('Casos EDA',fmtN(dE.eda),'',`${fmt(dE.tasa)}% del total`,'orange','💊','CIE-10: A00-A09\nFuente: campo Diagnostico')}
+        ${kpi('Tasa EDA',dE.tasa,'%','','orange','📊','Fórmula: Casos EDA ÷ Total Hospitalizados × 100')}
+        ${hasPyP ? kpi('Gestantes EDA',fmtN(resE.gestantes),'',`de ${dE.eda} casos`,'purple','🤱','Gestantes con EDA según cruce PyP') : ''}
       </div>
+      <!-- IRA -->
       <div class="section-title" style="margin:20px 0 14px"><span>🫁</span> IRA — Infección Respiratoria Aguda</div>
       <div class="kpi-grid">
-        ${kpi('Casos IRA',fmtN(dI.ira),'',`${fmt(dI.tasa)}% del total`,'blue','🫁','CIE-10: J00-J22 (Infecciones respiratorias agudas)\nFuente: campo Diagnostico\nServicios: Hosp. Adultos, Pediátrica, Observación.')}
-        ${kpi('Tasa IRA',dI.tasa,'%','','blue','📊','Fórmula: (Casos IRA ÷ Total Hospitalizados) × 100\nFuente: campo Diagnostico, CIE-10: J00-J22.')}
+        ${kpi('Casos IRA',fmtN(dI.ira),'',`${fmt(dI.tasa)}% del total`,'blue','🫁','CIE-10: J00-J22\nFuente: campo Diagnostico')}
+        ${kpi('Tasa IRA',dI.tasa,'%','','blue','📊','Fórmula: Casos IRA ÷ Total Hospitalizados × 100')}
+        ${hasPyP ? kpi('Gestantes IRA',fmtN(resI.gestantes),'',`de ${dI.ira} casos`,'purple','🤱','Gestantes con IRA según cruce PyP') : ''}
       </div>
+      <!-- Gráficas -->
       <div class="chart-grid">
         <div class="chart-card"><h4>EDA por IPS</h4><canvas id="ch-eda-ips" height="260"></canvas></div>
         <div class="chart-card"><h4>IRA por IPS</h4><canvas id="ch-ira-ips" height="260"></canvas></div>
+        ${hasPyP ? `<div class="chart-card"><h4>EDA — Distribución por Edad</h4><canvas id="ch-eda-edad" height="260"></canvas></div>` : ''}
+        ${hasPyP ? `<div class="chart-card"><h4>IRA — Distribución por Edad</h4><canvas id="ch-ira-edad" height="260"></canvas></div>` : ''}
       </div>
-      ${(() => {
-        const COLS = ['IPS Primaria','Numero Identificacion','Nombre Paciente','Dirección','Municipio','Teléfonos','Fecha Ingreso','Fecha Egreso','IPS','Recuento','Ruta'];
-        function buildDetalle(rows, ruta) {
-          // Calcular recuento de apariciones por Numero Identificacion
-          const conteo = {};
-          rows.forEach(r => { const id = String(CALCS.get(r,'Numero Identificacion')||''); conteo[id] = (conteo[id]||0)+1; });
-          const enriched = rows.map(r => {
-            const id = String(CALCS.get(r,'Numero Identificacion')||'');
-            return {
-              'IPS Primaria':          CALCS.get(r,'IPS Primaria')||CALCS.get(r,'IPS')||'',
-              'Numero Identificacion': id,
-              'Nombre Paciente':       CALCS.get(r,'Nombre Paciente')||'',
-              'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||'',
-              'Municipio':             CALCS.get(r,'Municipio')||'',
-              'Teléfonos':             CALCS.get(r,'Teléfonos')||CALCS.get(r,'Telefonos')||'',
-              'Fecha Ingreso':         CALCS.get(r,'Fecha Ingreso')||'',
-              'Fecha Egreso':          CALCS.get(r,'Fecha Egreso')||'',
-              'IPS':                   CALCS.get(r,'IPS')||'',
-              'Recuento':              conteo[id]||1,
-              'Ruta':                  ruta,
-            };
-          });
-          return buildTable(enriched, COLS);
-        }
-        return `
-          <div class="data-table-wrap"><h4>Detalle EDA</h4>${buildDetalle(dE.rows,'EDA')}</div>
-          <div class="data-table-wrap" style="margin-top:16px"><h4>Detalle IRA</h4>${buildDetalle(dI.rows,'IRA')}</div>`;
-      })()}`;
+      <!-- Tablas edad PyP -->
+      ${tablaEdad(resE.porEdad,'📊 EDA — Distribución por Grupo Etario (cruce PyP)','#f39c12')}
+      ${tablaEdad(resI.porEdad,'📊 IRA — Distribución por Grupo Etario (cruce PyP)','#2980b9')}
+      <!-- Detalles -->
+      <div class="data-table-wrap" style="margin-top:16px"><h4>Detalle EDA</h4>${buildTable(resE.enriched,null,200)}</div>
+      <div class="data-table-wrap" style="margin-top:16px"><h4>Detalle IRA</h4>${buildTable(resI.enriched,null,200)}</div>`;
+
     setTimeout(()=>{
       const topE = Object.entries(dE.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias).slice(0,12);
       CHARTS.barras('ch-eda-ips',topE.map(x=>x[0]),topE.map(x=>x[1].coincidencias),'Casos EDA','#f39c12');
       const topI = Object.entries(dI.porIps).sort((a,b)=>b[1].coincidencias-a[1].coincidencias).slice(0,12);
       CHARTS.barras('ch-ira-ips',topI.map(x=>x[0]),topI.map(x=>x[1].coincidencias),'Casos IRA','#2980b9');
+      if (hasPyP) {
+        const edEdas = Object.entries(resE.porEdad).filter(([,v])=>v>0);
+        if (edEdas.length) CHARTS.barras('ch-eda-edad',edEdas.map(x=>x[0]),edEdas.map(x=>x[1]),'Casos','#f39c12');
+        const edIras = Object.entries(resI.porEdad).filter(([,v])=>v>0);
+        if (edIras.length) CHARTS.barras('ch-ira-edad',edIras.map(x=>x[0]),edIras.map(x=>x[1]),'Casos','#2980b9');
+      }
     },50);
   }
 
@@ -2641,6 +2732,7 @@ const APP = (() => {
           ${state.dntRows.length    ? kpi('DNT',fmtN(state.dntRows.length),'registros',state.fileNames.dnt||'','purple','🍽️') : ''}
           ${state.cydRows.length    ? kpi('CyD',fmtN(state.cydRows.length),'registros',state.fileNames.cyd||'','green','🌱') : ''}
           ${state.estanciaRows.length ? kpi('Estancia',fmtN(state.estanciaRows.length),'registros',state.fileNames.estancia||'','teal','🛏️') : ''}
+          ${state.pypRows.length    ? kpi('PyP 3280',fmtN(state.pypRows.length),'registros',state.fileNames.pyp||'','green','🩺') : ''}
         </div>
       </div>` : ''}`;
   }
@@ -2650,7 +2742,7 @@ const APP = (() => {
     // Verificar estado de Drive al abrir la pestaña
     setTimeout(() => APP.driveCheckStatus && APP.driveCheckStatus(), 300);
     const totalMain = state.rows.length;
-    const extras = [state.rcvRows,state.aiuRows,state.dntRows,state.cydRows,state.estanciaRows];
+    const extras = [state.rcvRows,state.aiuRows,state.dntRows,state.cydRows,state.estanciaRows,state.pypRows];
     const extraTotal = extras.reduce((a,r)=>a+r.length,0);
 
     function sourceCard(src) {
@@ -2765,6 +2857,7 @@ const APP = (() => {
           ${state.dntRows.length   ? kpi('DNT',       fmtN(state.dntRows.length),  'registros',state.fileNames.dnt||'',   'purple','🍽️') : ''}
           ${state.cydRows.length   ? kpi('CyD',       fmtN(state.cydRows.length),  'registros',state.fileNames.cyd||'',   'green', '🌱')  : ''}
           ${state.estanciaRows.length ? kpi('Estancia',fmtN(state.estanciaRows.length),'registros',state.fileNames.estancia||'','teal','🛏️') : ''}
+          ${state.pypRows.length   ? kpi('PyP 3280',fmtN(state.pypRows.length),'registros',state.fileNames.pyp||'','green','🩺') : ''}
         </div>
         <h4 style="font-size:13px;color:#555;margin-bottom:8px">Vista previa DETALLADO (primeros 50 registros)</h4>
         ${buildTable(state.rows.slice(0,50), null, 50)}
