@@ -648,9 +648,19 @@ const APP = (() => {
     });
   }
 
+  // Detecta si un archivo es PyP por nombre (informe_4505 o variantes)
+  function esPyPFilename(name) {
+    return /4505|informe_4505|pyp.*3280|3280.*pyp/i.test(name||'');
+  }
+
   // Upload por fuente específica (desde tab Datos)
   function handleUploadSource(input, sourceKey) {
     const file = input.files[0]; if (!file) return;
+    // Auto-detección: si el archivo se llama informe_4505* siempre va a pyp
+    if (sourceKey !== 'pyp' && esPyPFilename(file.name)) {
+      toast('🩺 Archivo PyP detectado — redirigiendo a fuente PyP Res. 3280…','info');
+      sourceKey = 'pyp';
+    }
     const src = SOURCES.find(s=>s.key===sourceKey);
     toast(`⏳ Leyendo ${src?.label||sourceKey}…`,'info');
     readFile(file, (err, rows) => {
@@ -780,6 +790,16 @@ const APP = (() => {
           if (d.source != null) state.source = d.source;
           // Guardar en localStorage como respaldo de emergencia
           try { localStorage.setItem(LS_PREFIX+table, JSON.stringify(d)); } catch(e) {}
+        }
+        // Si res202 tiene estructura PyP y pypRows está vacío → copiar para cruce EDA/IRA
+        if (key === 'res202' && state.pypRows.length === 0 && d.rows.length > 0) {
+          const sample = d.rows[0] || {};
+          if (sample['Numero de identificacion del usuario'] !== undefined ||
+              sample['tipo_identificacion'] !== undefined ||
+              sample['primer_apellido'] !== undefined) {
+            state.pypRows = d.rows;
+            console.info('[loadSaved] res202 contiene estructura PyP → copiado a pypRows');
+          }
         }
       }
     }
@@ -1616,10 +1636,28 @@ const APP = (() => {
       return String(v).trim().replace(/\.0+$/, '');
     }
 
-    const hasPyP = state.pypRows.length > 0;
+    // Fuente PyP: usar pypRows; si vacío, usar res202Rows como fallback si tiene estructura PyP
+    const _pypFuente = (() => {
+      if (state.pypRows.length > 0) return state.pypRows;
+      if (state.res202Rows.length > 0) {
+        const sample = state.res202Rows[0] || {};
+        const tieneEstructuraPyP =
+          sample['Numero de identificacion del usuario'] !== undefined ||
+          sample['tipo_identificacion'] !== undefined ||
+          sample['primer_apellido'] !== undefined;
+        if (tieneEstructuraPyP) {
+          // Copiar al estado correcto para no repetir este fallback
+          state.pypRows = state.res202Rows;
+          toast('🩺 Base PyP detectada en Resolución 202 — cruce activado automáticamente','success');
+          return state.pypRows;
+        }
+      }
+      return [];
+    })();
+    const hasPyP = _pypFuente.length > 0;
     const pypByID = {};
     if (hasPyP) {
-      state.pypRows.forEach(r => {
+      _pypFuente.forEach(r => {
         const raw =
           CALCS.get(r,'Número de identificación del usuario') ||
           CALCS.get(r,'Numero de identificacion del usuario') ||
