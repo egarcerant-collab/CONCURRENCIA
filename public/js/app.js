@@ -654,25 +654,76 @@ const APP = (() => {
     return /4505|informe_4505|pyp.*3280|3280.*pyp/i.test(name||'');
   }
 
+  // Guarda PyP compacto en localStorage (ID + Gestante + Sexo + Edad + RiesgoCV)
+  // Formato ultra-compacto: ~2.5MB para 63k filas — cabe en localStorage (5MB límite)
+  function savePyPLocal(rows, fileName) {
+    try {
+      const compact = rows.map(r => ({
+        i: String(r['Numero de identificacion del usuario']||'').trim(),
+        g: String(r['Gestante']||r['gestante']||'').trim(),
+        s: String(r['Sexo']||r['sexo']||'').trim().charAt(0).toUpperCase(), // M/F
+        e: String(r['Edad']||r['edad']||'').trim(),
+        c: String(r['Clasificación del riesgo cardiovascular']||r['clasificacion_riesgo_cardiovascular']||'').trim(),
+      })).filter(r => r.i);
+      const payload = JSON.stringify({ rows: compact, fileName, at: Date.now() });
+      localStorage.setItem('ir_PYP_COMPACT', payload);
+      console.log(`[PyP Local] ${compact.length} registros guardados en localStorage (${(payload.length/1024/1024).toFixed(1)} MB)`);
+      return compact.length;
+    } catch(e) {
+      console.warn('[PyP Local] No se pudo guardar en localStorage:', e.message);
+      return 0;
+    }
+  }
+
+  // Restaura PyP desde localStorage a state.pypRows (expande formato compacto)
+  function loadPyPLocal() {
+    try {
+      const raw = localStorage.getItem('ir_PYP_COMPACT');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed.rows || !parsed.rows.length) return false;
+      state.pypRows = parsed.rows.map(r => ({
+        'Numero de identificacion del usuario': r.i,
+        'Gestante':  r.g,
+        'Sexo':      r.s === 'M' ? 'Masculino' : r.s === 'F' ? 'Femenino' : r.s,
+        'Edad':      r.e,
+        'Clasificación del riesgo cardiovascular': r.c,
+      }));
+      state.fileNames['pyp'] = parsed.fileName || 'PyP (caché local)';
+      console.log(`[PyP Local] Restaurado: ${state.pypRows.length} registros desde localStorage`);
+      return true;
+    } catch(e) {
+      console.warn('[PyP Local] Error al restaurar:', e.message);
+      return false;
+    }
+  }
+
   // Upload por fuente específica (desde tab Datos)
   function handleUploadSource(input, sourceKey) {
     const file = input.files[0]; if (!file) return;
     // Auto-detección: si el archivo se llama informe_4505* siempre va a pyp
     if (sourceKey !== 'pyp' && esPyPFilename(file.name)) {
-      toast('🩺 Archivo PyP detectado — redirigiendo a fuente PyP Res. 3280…','info');
       sourceKey = 'pyp';
     }
     const src = SOURCES.find(s=>s.key===sourceKey);
-    toast(`⏳ Leyendo ${src?.label||sourceKey}…`,'info');
+    const sizeMB = (file.size/1024/1024).toFixed(1);
+    toast(`⏳ Leyendo ${src?.label||sourceKey} (${sizeMB} MB)…`,'info');
     readFile(file, (err, rows) => {
       try {
         if (err) { toast('❌ Error leyendo archivo: '+(err.message||err),'error'); return; }
-        if (!rows || rows.length === 0) { toast('⚠️ El archivo no tiene filas válidas','error'); return; }
+        if (!rows || rows.length === 0) { toast('⚠️ El archivo no tiene filas válidas — verifica el formato','error'); return; }
         const stateKey = sourceKey === 'detallado' ? 'rows' : sourceKey+'Rows';
         state[stateKey] = rows;          // Memoria: todas las columnas
         state.fileNames[sourceKey] = file.name;
         if (sourceKey === 'detallado') {
           state.meta = CALCS.extractMeta(rows);
+        }
+        // PyP: guardar compacto en localStorage para persistir entre sesiones
+        if (sourceKey === 'pyp') {
+          const n = savePyPLocal(rows, file.name);
+          toast(`✅ PyP: ${fmtN(rows.length)} registros en memoria · ${n} IDs guardados localmente 🔒`,'success');
+        } else {
+          toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
         }
         const meta = sourceKey === 'detallado'
           ? { source: 'manual-upload', tipoReporte: 1 }
@@ -681,7 +732,6 @@ const APP = (() => {
         const rowsCloud = slimRows(sourceKey, rows);
         saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
         updateStatusBar();
-        toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
         // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
         if (sourceKey === 'detallado') navigate('dashboard'); else render();
       } catch(ex) {
@@ -803,6 +853,13 @@ const APP = (() => {
             console.info('[loadSaved] res202 contiene estructura PyP → copiado a pypRows');
           }
         }
+      }
+    }
+
+    // PyP: si Supabase no tenía datos, restaurar desde localStorage compacto
+    if (state.pypRows.length === 0) {
+      if (loadPyPLocal()) {
+        console.info('[loadSaved] PyP restaurado desde localStorage compacto →', state.pypRows.length, 'registros');
       }
     }
 
