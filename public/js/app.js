@@ -3684,6 +3684,28 @@ const APP = (() => {
 
       const rows = buildSummary();
       if (!rows || !rows.length) { toast('Sin datos para exportar','error'); return; }
+
+      // EDA/IRA: exportar 2 archivos separados (uno EDA, uno IRA)
+      if (tab === 'edaira') {
+        const rowsEDA = rows.filter(r => (r['Ruta']||r['ruta']||'') === 'EDA');
+        const rowsIRA = rows.filter(r => (r['Ruta']||r['ruta']||'') === 'IRA');
+        const fecha = new Date().toISOString().slice(0,10);
+        if (rowsEDA.length) {
+          const wsE = XLSX.utils.json_to_sheet(rowsEDA);
+          const wbE = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wbE, wsE, 'EDA');
+          XLSX.writeFile(wbE, `EDA_${fecha}.xlsx`);
+        }
+        if (rowsIRA.length) {
+          const wsI = XLSX.utils.json_to_sheet(rowsIRA);
+          const wbI = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wbI, wsI, 'IRA');
+          XLSX.writeFile(wbI, `IRA_${fecha}.xlsx`);
+        }
+        toast(`✅ Exportados: EDA (${fmtN(rowsEDA.length)}) e IRA (${fmtN(rowsIRA.length)}) — 2 archivos descargados`,'success');
+        return;
+      }
+
       openExportModal(rows, name);
     },
     closeExportModal: () => {
