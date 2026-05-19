@@ -510,8 +510,8 @@ const APP = (() => {
     'Estancia','Programa Riesgo','Gestacion','Via Parto','Dx Gestante',
     'Control Prenatal','Reingreso','Auditor','Glosas','Valor Total Glosa',
     'Eventos Adversos','Cantidad Evento no calidad','Observación Seguimiento',
-    'Patologia alto costo','Especialidad','IPS Primaria',
-    'Dirección','Direccion','Teléfono','Telefono','Celular'
+    'Patologia alto costo','Patologia Alto Costo','Especialidad','IPS Primaria',
+    'Dirección','Direccion','Teléfonos','Telefonos','Teléfono','Telefono','Celular'
   ];
 
   function filtrarEsenciales(rows) {
@@ -1771,8 +1771,9 @@ const APP = (() => {
                                    edadRaw < 30 ? '20-29' : edadRaw < 40 ? '30-39' :
                                    edadRaw < 50 ? '40-49' : edadRaw < 60 ? '50-59' :
                                    edadRaw < 70 ? '60-69' : '70+',
-          'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||CALCS.get(r,'direccion')||(pyp?CALCS.get(pyp,'Dirección')||'':''),
-          'Teléfono':              CALCS.get(r,'Teléfono')||CALCS.get(r,'Telefono')||CALCS.get(r,'telefono')||CALCS.get(r,'Celular')||CALCS.get(r,'celular')||(pyp?CALCS.get(pyp,'Teléfono')||CALCS.get(pyp,'Telefono')||'':''),
+          'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||CALCS.get(r,'direccion')||'',
+          'Teléfonos':             CALCS.get(r,'Teléfonos')||CALCS.get(r,'Telefonos')||CALCS.get(r,'Teléfono')||CALCS.get(r,'Telefono')||CALCS.get(r,'Celular')||'',
+          'Patologia alto costo':  CALCS.get(r,'Patologia alto costo')||CALCS.get(r,'Patologia Alto Costo')||'',
           'Municipio':             CALCS.get(r,'Municipio')||'',
           'Fecha Ingreso':         CALCS.get(r,'Fecha Ingreso')||'',
           'Fecha Egreso':          CALCS.get(r,'Fecha Egreso')||'',
