@@ -510,7 +510,8 @@ const APP = (() => {
     'Estancia','Programa Riesgo','Gestacion','Via Parto','Dx Gestante',
     'Control Prenatal','Reingreso','Auditor','Glosas','Valor Total Glosa',
     'Eventos Adversos','Cantidad Evento no calidad','Observación Seguimiento',
-    'Patologia alto costo','Especialidad','IPS Primaria'
+    'Patologia alto costo','Especialidad','IPS Primaria',
+    'Dirección','Direccion','Teléfono','Telefono','Celular'
   ];
 
   function filtrarEsenciales(rows) {
