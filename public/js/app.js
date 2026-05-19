@@ -1764,7 +1764,7 @@ const APP = (() => {
           'Edad':                  edadRaw || '',
           'Sexo':                  sexo || CALCS.get(r,'Sexo')||'',
           'Gestante PyP':          esGest ? 'Sí' : (hasPyP && pyp ? 'No' : '—'),
-          'En PyP 3280':           hasPyP ? (pyp ? 'Sí' : 'No') : '—',
+          'R202':           hasPyP ? (pyp ? 'Sí' : 'No') : '—',
           'Grupo Etario':          edadRaw < 5  ? '0-4'   : edadRaw < 10 ? '5-9'   :
                                    edadRaw < 15 ? '10-14' : edadRaw < 20 ? '15-19' :
                                    edadRaw < 30 ? '20-29' : edadRaw < 40 ? '30-39' :
