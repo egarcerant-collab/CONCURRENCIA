@@ -1770,7 +1770,8 @@ const APP = (() => {
                                    edadRaw < 30 ? '20-29' : edadRaw < 40 ? '30-39' :
                                    edadRaw < 50 ? '40-49' : edadRaw < 60 ? '50-59' :
                                    edadRaw < 70 ? '60-69' : '70+',
-          'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||(pyp?CALCS.get(pyp,'Dirección')||'':''),
+          'Dirección':             CALCS.get(r,'Dirección')||CALCS.get(r,'Direccion')||CALCS.get(r,'direccion')||(pyp?CALCS.get(pyp,'Dirección')||'':''),
+          'Teléfono':              CALCS.get(r,'Teléfono')||CALCS.get(r,'Telefono')||CALCS.get(r,'telefono')||CALCS.get(r,'Celular')||CALCS.get(r,'celular')||(pyp?CALCS.get(pyp,'Teléfono')||CALCS.get(pyp,'Telefono')||'':''),
           'Municipio':             CALCS.get(r,'Municipio')||'',
           'Fecha Ingreso':         CALCS.get(r,'Fecha Ingreso')||'',
           'Fecha Egreso':          CALCS.get(r,'Fecha Egreso')||'',
