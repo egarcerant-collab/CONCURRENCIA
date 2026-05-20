@@ -1758,14 +1758,17 @@ const APP = (() => {
         else if (sexo === 'F' || sexo === 'FEMENINO') porSexo.F++;
         else porSexo.Otro++;
         if (esGest) gestantes++;
+        // Spread de la fila original primero → preserva TODAS las columnas del DETALLADO
+        // (Dirección, Teléfonos, Patologia alto costo, etc.) sin depender de nombres exactos
         return {
+          ...r,
           'IPS Primaria':          CALCS.get(r,'IPS Primaria')||CALCS.get(r,'IPS')||'',
           'Numero Identificacion': id,
           'Nombre Paciente':       CALCS.get(r,'Nombre Paciente')||'',
           'Edad':                  edadRaw || '',
           'Sexo':                  sexo || CALCS.get(r,'Sexo')||'',
           'Gestante PyP':          esGest ? 'Sí' : (hasPyP && pyp ? 'No' : '—'),
-          'R202':           hasPyP ? (pyp ? 'Sí' : 'No') : '—',
+          'R202':                  hasPyP ? (pyp ? 'Sí' : 'No') : '—',
           'Grupo Etario':          edadRaw < 5  ? '0-4'   : edadRaw < 10 ? '5-9'   :
                                    edadRaw < 15 ? '10-14' : edadRaw < 20 ? '15-19' :
                                    edadRaw < 30 ? '20-29' : edadRaw < 40 ? '30-39' :
