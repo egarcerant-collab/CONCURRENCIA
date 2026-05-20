@@ -13,7 +13,8 @@ const COLS_ESENCIALES = {
     'Dx Gestante','Control Prenatal','Reingreso','Auditor','Glosas',
     'Valor Total Glosa','Eventos Adversos','Cantidad Evento no calidad',
     'Observación Seguimiento','Patologia alto costo','Especialidad',
-    'Patologia Alto Costo','IPS Primaria'
+    'Patologia Alto Costo','IPS Primaria',
+    'Dirección','Direccion','Teléfonos','Telefonos','Teléfono','Telefono','Celular'
   ]
 };
 
