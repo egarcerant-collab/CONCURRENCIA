@@ -1792,21 +1792,33 @@ const APP = (() => {
     const resE = enriquecerConPyP(dE.rows, 'EDA');
     const resI = enriquecerConPyP(dI.rows, 'IRA');
 
-    // Guardar enriched combinado para exportar con filtro de edad
-    _edairaEnriched  = [...resE.enriched, ...resI.enriched];
-    _edairaEdadDesde = null; // resetear al re-renderizar
-    _edairaEdadHasta = null;
+    // Guardar enriched combinado — NO resetear filtro de edad (el usuario lo mantiene entre re-renders)
+    _edairaEnriched = [...resE.enriched, ...resI.enriched];
+    // Recalcular conteo con filtro de edad activo (si existe)
+    const _edairaFiltradoLen = (_edairaEdadDesde !== null || _edairaEdadHasta !== null)
+      ? _edairaEnriched.filter(r => {
+          const ed = Number(r['Edad'] ?? 0);
+          return (_edairaEdadDesde === null || ed >= _edairaEdadDesde) &&
+                 (_edairaEdadHasta === null || ed <= _edairaEdadHasta);
+        }).length
+      : _edairaEnriched.length;
 
     // ── Selector de rango de edad libre ──
+    // Restaurar valores previos en los inputs si el filtro estaba activo
+    const _valDesde = _edairaEdadDesde !== null ? _edairaEdadDesde : '';
+    const _valHasta = _edairaEdadHasta !== null ? _edairaEdadHasta : '';
+    const _infoText = (_edairaEdadDesde !== null || _edairaEdadHasta !== null)
+      ? `✅ <b>${_edairaEdadDesde ?? 0}–${_edairaEdadHasta ?? '∞'} años</b> → <b style="color:#1a4f7a">${fmtN(_edairaFiltradoLen)}</b> registros para exportar`
+      : `Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros`;
     const edadFilterUI = `
       <div style="margin-bottom:12px;padding:11px 16px;background:#f0f6ff;border:1px solid #c3d9f5;border-radius:10px;display:flex;flex-wrap:wrap;align-items:center;gap:12px">
         <span style="font-size:12px;font-weight:700;color:#1a4f7a;white-space:nowrap">🔢 Filtrar por edad:</span>
         <div style="display:flex;align-items:center;gap:6px">
           <label style="font-size:12px;color:#555">Desde</label>
-          <input id="eda-edad-desde" type="number" min="0" max="120" placeholder="0"
+          <input id="eda-edad-desde" type="number" min="0" max="120" placeholder="0" value="${_valDesde}"
             style="width:64px;padding:5px 8px;border:1px solid #c3d9f5;border-radius:8px;font-size:13px;text-align:center">
           <label style="font-size:12px;color:#555">Hasta</label>
-          <input id="eda-edad-hasta" type="number" min="0" max="120" placeholder="120"
+          <input id="eda-edad-hasta" type="number" min="0" max="120" placeholder="120" value="${_valHasta}"
             style="width:64px;padding:5px 8px;border:1px solid #c3d9f5;border-radius:8px;font-size:13px;text-align:center">
           <label style="font-size:12px;color:#555">años</label>
         </div>
@@ -1819,7 +1831,7 @@ const APP = (() => {
           ↺ Limpiar
         </button>
         <span id="edaira-age-info" style="font-size:11px;color:#888">
-          Sin filtro — exporta los <b>${fmtN(_edairaEnriched.length)}</b> registros
+          ${_infoText}
         </span>
       </div>`;
 
