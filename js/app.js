@@ -3055,6 +3055,50 @@ const APP = (() => {
         </div>
       </div>
 
+      <!-- ── GOOGLE DRIVE ── -->
+      <div class="upload-section" style="border:2px solid #34a853;background:linear-gradient(135deg,#e8f5e9,#fff);margin-bottom:20px">
+        <h3 style="color:#1b5e20;margin:0 0 8px">📂 Google Drive — Carpeta de Archivos</h3>
+        <p style="font-size:12px;color:#555;margin:0 0 14px">
+          Carga archivos directamente desde la carpeta de Google Drive compartida.
+          Los archivos deben estar compartidos con "Cualquiera con el enlace puede ver".
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+          <a href="https://drive.google.com/drive/folders/1GvJuv9M4tssWIKwI9gA5TyUqFLigLIQc?usp=sharing"
+            target="_blank" rel="noopener"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#34a853;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">
+            🔗 Abrir carpeta en Drive
+          </a>
+          <span style="font-size:11px;color:#888">Carpeta: Dirección del Riesgo · Dusakawi</span>
+        </div>
+        <div style="background:#fff;border:1px solid #c8e6c9;border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:10px">
+            📥 Cargar archivo desde URL de Google Drive
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;margin-bottom:8px">
+            <input id="drive-url-input" type="text" placeholder="Pega aquí el link de compartir de Google Drive (drive.google.com/...)"
+              style="padding:8px 12px;border:1.5px solid #c8e6c9;border-radius:8px;font-size:12px;outline:none;width:100%">
+            <select id="drive-source-key" style="padding:8px;border:1.5px solid #c8e6c9;border-radius:8px;font-size:12px;color:#333">
+              <option value="detallado">📊 DETALLADO</option>
+              <option value="pyp">🩺 PyP Res. 3280</option>
+              <option value="rcv">❤️ RCV</option>
+              <option value="aiu">🚑 AIU</option>
+              <option value="dnt">🍽️ DNT</option>
+              <option value="cyd">🌱 CyD</option>
+              <option value="estancia">🛏️ Estancia</option>
+              <option value="res202">📄 Res. 202</option>
+            </select>
+            <button onclick="APP.cargarDesdeDrive()"
+              style="padding:8px 18px;background:#34a853;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">
+              ⬇️ Cargar
+            </button>
+          </div>
+          <div id="drive-load-status" style="font-size:11px;color:#888;min-height:16px"></div>
+        </div>
+        <div style="font-size:11px;color:#777;background:#f1f8e9;border-radius:8px;padding:8px 12px;border-left:3px solid #aed581">
+          <b>Cómo obtener el link:</b> En Drive, clic derecho sobre el archivo → Compartir → "Cualquiera con el enlace puede ver" → Copiar enlace → Pegar aquí.
+        </div>
+      </div>
+
       <!-- ── OTRAS FUENTES ── -->
       <div class="upload-section">
         <h3>📁 Fuentes de Datos Complementarias</h3>
@@ -3966,6 +4010,59 @@ const APP = (() => {
       sessionStorage.removeItem('adminAuth_dusakawi');
       _pendingDetallado = null;
       admin();
+    },
+
+    // ── Cargar archivo desde URL de Google Drive ──────────────
+    cargarDesdeDrive: async () => {
+      const urlEl    = document.getElementById('drive-url-input');
+      const keyEl    = document.getElementById('drive-source-key');
+      const statusEl = document.getElementById('drive-load-status');
+      const rawUrl   = (urlEl?.value||'').trim();
+      const sourceKey = keyEl?.value || 'detallado';
+      if (!rawUrl) { toast('Pega primero la URL de Google Drive','error'); return; }
+
+      const setStatus = (msg, color='#555') => { if (statusEl) statusEl.innerHTML = `<span style="color:${color}">${msg}</span>`; };
+      setStatus('⏳ Descargando desde Google Drive...');
+
+      // Extraer file ID de distintos formatos de URL de Drive
+      const extractId = url => {
+        const m = url.match(/(?:\/d\/|id=|\/file\/d\/|folders\/)([a-zA-Z0-9_-]{20,})/);
+        return m ? m[1] : null;
+      };
+
+      const fileId = extractId(rawUrl);
+      if (!fileId) { setStatus('❌ URL no válida. Verifica que sea un enlace de Google Drive.','#e74c3c'); return; }
+
+      try {
+        // Intentar primero vía servidor proxy (funciona con Vercel activo)
+        const proxyUrl = `/api/drive-proxy?id=${fileId}`;
+        setStatus('⏳ Descargando via servidor...');
+        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(60000) });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        const arrayBuffer = await resp.arrayBuffer();
+        const bytes = arrayBuffer.byteLength;
+        setStatus(`✅ Descargado (${(bytes/1024/1024).toFixed(1)} MB). Procesando...`,'#27ae60');
+
+        // Convertir ArrayBuffer → File simulado → procesar igual que un upload manual
+        const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+        const fileName = `drive_${sourceKey}_${Date.now()}.xlsx`;
+        const file = new File([blob], fileName);
+
+        // Crear un input simulado y procesarlo
+        const fakeInput = { files: [file] };
+        APP.handleUploadSource(fakeInput, sourceKey);
+        if (urlEl) urlEl.value = '';
+        setStatus(`✅ Archivo cargado desde Drive (${(bytes/1024/1024).toFixed(1)} MB)`,'#27ae60');
+      } catch(e) {
+        console.warn('[Drive] Error proxy:', e.message);
+        // Fallback: intentar descarga directa (solo funciona para Google Sheets públicos)
+        setStatus('⚠️ Servidor no disponible. Intenta descargar el archivo manualmente y súbelo con el botón 📂 Cargar.','#e67e22');
+        // Abrir Drive para descarga manual
+        const driveDownload = `https://drive.google.com/uc?export=download&id=${fileId}`;
+        window.open(driveDownload, '_blank');
+      }
     },
     // ── Admin: selección de archivo (Paso 1) ─────────────────
     onAdminFileSelect: (input) => {
