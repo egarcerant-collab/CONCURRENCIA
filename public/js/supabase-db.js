@@ -3,6 +3,11 @@ const SUPA_URL = 'https://sstuwlwukjokhjbtelig.supabase.co';
 const SUPA_KEY = 'sb_publishable_kF5Vvgn0HYk7vo-JpPLFjA_BdfmobDK';
 const BUCKET   = 'indicadores';
 const MAX_JSON_MB = 20;
+const SUPA_TIMEOUT_MS = 12000; // 12 s máximo para cada descarga
+
+// ── Google Sheets — respaldo cuando Supabase no responde ─────
+// ID de la hoja: https://docs.google.com/spreadsheets/d/ID/edit
+const GSHEETS_ID = '1Uoj-zA7Q3TC7_1TcPJ6EzzcKB1XXpWni';
 
 const COLS_ESENCIALES = {
   DATOS: [
@@ -19,7 +24,7 @@ const COLS_ESENCIALES = {
 };
 
 function normCol(s) {
-  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
 }
 
 function filtrarColumnas(table, rows) {
@@ -35,13 +40,12 @@ function filtrarColumnas(table, rows) {
   });
   return rows.map(r => {
     const o = {};
-    usar.forEach(([alias, real]) => { o[alias] = r[real] ?? r[real] ?? ''; });
+    usar.forEach(([alias, real]) => { o[alias] = r[real] ?? ''; });
     return o;
   });
 }
 
 // ── Subida DIRECTA a Supabase Storage vía fetch ──────────────
-// Igual al método del servidor — NO pasa por Vercel, sin límite de 4.5MB
 async function supaUploadDirect(table, rows, fileName, meta = {}) {
   try {
     const rowsFiltrados = filtrarColumnas(table, rows);
@@ -65,6 +69,7 @@ async function supaUploadDirect(table, rows, fileName, meta = {}) {
           'x-upsert':      'true',
         },
         body: payload,
+        signal: AbortSignal.timeout(30000),
       }
     );
     if (!res.ok) {
@@ -90,10 +95,8 @@ function getClient() {
 }
 
 async function supaUpload(table, rows, fileName, meta = {}) {
-  // Intentar primero con fetch directo (más confiable)
   const ok = await supaUploadDirect(table, rows, fileName, meta);
   if (ok) return true;
-  // Fallback: SDK de Supabase
   const client = getClient();
   if (!client) return false;
   try {
@@ -111,16 +114,16 @@ async function supaUpload(table, rows, fileName, meta = {}) {
   } catch(e) { console.warn('[Supabase SDK] exception:', e); return false; }
 }
 
-// ── Descargar desde Supabase Storage (siempre fresco, sin caché) ──
+// ── Descargar desde Supabase Storage (con timeout para no colgar) ──
 async function supaDownload(table) {
-  // Cache-buster: cada descarga usa un timestamp único → el browser nunca sirve caché
   const bust = `?t=${Date.now()}`;
   try {
     const res = await fetch(
       `${SUPA_URL}/storage/v1/object/${BUCKET}/${table}.json${bust}`,
       {
         headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY },
-        cache: 'no-store',          // ← no cachear en browser
+        cache: 'no-store',
+        signal: AbortSignal.timeout(SUPA_TIMEOUT_MS),
       }
     );
     if (res.ok) {
@@ -149,17 +152,50 @@ async function supaDownload(table) {
   }
 }
 
-// supaCheck: verifica si Supabase es accesible intentando descargar DATOS.json
-// (el endpoint de metadatos del bucket requiere admin; el object endpoint no)
+// ── Google Sheets — descarga CSV como respaldo ────────────────
+// Requiere que la hoja esté publicada: Archivo > Compartir > Publicar en la web → CSV
+async function gSheetsDownload(sheetId) {
+  const id = sheetId || GSHEETS_ID;
+  // Intentar vía gviz (funciona con hojas publicadas en la web)
+  const urls = [
+    `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv`,
+    `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) { console.warn('[GSheets] HTTP', res.status, url); continue; }
+      const csv = await res.text();
+      if (!csv || csv.length < 100) continue;
+      if (!window.XLSX) { console.warn('[GSheets] SheetJS no disponible'); return null; }
+      const wb = window.XLSX.read(csv, { type: 'string' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) continue;
+      console.log(`[GSheets] ✅ ${rows.length} filas cargadas desde Google Sheets`);
+      return { rows, fileName: 'Google Sheets (respaldo)', uploadedAt: new Date().toISOString(), source: 'gsheets' };
+    } catch(e) {
+      console.warn('[GSheets] Error con', url, '→', e.message);
+    }
+  }
+  return null;
+}
+
 async function supaCheck() {
   try {
     const res = await fetch(
       `${SUPA_URL}/storage/v1/object/${BUCKET}/DATOS.json`,
-      { method: 'HEAD', headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY } }
+      {
+        method: 'HEAD',
+        headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY },
+        signal: AbortSignal.timeout(5000),
+      }
     );
-    // 200 = existe, 404 = no existe pero Supabase accesible, 401/403 = sin permisos
     return res.status !== 401 && res.status !== 403;
   } catch(e) { return false; }
 }
 
-window.SUPA_DB = { supaUpload, supaUploadDirect, supaDownload, supaCheck };
+window.SUPA_DB = { supaUpload, supaUploadDirect, supaDownload, supaCheck, gSheetsDownload };

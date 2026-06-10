@@ -821,7 +821,18 @@ const APP = (() => {
         try { d = await fetch('/api/data/'+table, {cache:'no-store'}).then(r=>r.json()); } catch(e) {}
       }
 
-      // 3. localStorage — SOLO emergencia total (sin red, sin servidor)
+      // 3. Google Sheets — respaldo cuando Supabase Y servidor fallan (solo para DATOS)
+      if ((!d || !d.rows || !d.rows.length) && table === 'DATOS' && window.SUPA_DB?.gSheetsDownload) {
+        try {
+          d = await window.SUPA_DB.gSheetsDownload();
+          if (d?.rows?.length) {
+            console.warn('[loadSaved] DATOS: cargado desde Google Sheets (respaldo de emergencia)');
+            toast('☁️ Datos cargados desde Google Sheets (respaldo)', 'info');
+          }
+        } catch(e) {}
+      }
+
+      // 4. localStorage — SOLO emergencia total (sin red, sin servidor, sin GSheets)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);

@@ -1,0 +1,30 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch paths for GitHub Pages (relative URLs)
+        run: |
+          cp -r public gh-pages-dist
+          sed -i 's|href="/css/|href="css/|g' gh-pages-dist/index.html
+          sed -i 's|src="/js/|src="js/|g'  gh-pages-dist/index.html
+
+      - name: Deploy to gh-pages branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: gh-pages-dist
+          branch: gh-pages
+          clean: true
