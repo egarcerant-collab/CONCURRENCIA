@@ -158,6 +158,38 @@ app.get('/api/drive-sync-log', (req, res) => {
   res.json({ inProgress: syncInProgress, log: syncLog });
 });
 
+// ── Proxy de Google Drive — descarga server-side (evita CORS del browser) ─
+// GET /api/drive-proxy?url=https://drive.google.com/...
+// GET /api/drive-proxy?id=FILE_ID
+app.get('/api/drive-proxy', async (req, res) => {
+  try {
+    let url = req.query.url || '';
+    const id = req.query.id || '';
+
+    // Extraer file ID de URL de Drive
+    if (!id && url) {
+      const m = url.match(/(?:\/d\/|id=|\/file\/d\/)([a-zA-Z0-9_-]{25,})/);
+      if (m) {
+        return res.redirect(`/api/drive-proxy?id=${m[1]}`);
+      }
+    }
+    if (id) {
+      url = `https://drive.google.com/uc?export=download&id=${id}&confirm=1`;
+    }
+    if (!url) return res.status(400).json({ error: 'Parámetro url o id requerido' });
+
+    const { fetchBuffer } = require('./drive-sync');
+    const buf = await fetchBuffer(url);
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('X-Drive-Bytes', buf.length);
+    res.send(buf);
+  } catch(e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // Cron diario Vercel — descarga automática del hospital a las 7 AM Colombia
 app.get('/api/hospital-sync', async (req, res) => {
   if (syncInProgress) return res.json({ ok: false, message: 'Ya en progreso' });

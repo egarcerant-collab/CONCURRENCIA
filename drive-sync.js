@@ -140,4 +140,4 @@ function getLastSyncInfo() {
 // Siempre configurado (no necesita credenciales)
 function credentialsExist() { return true; }
 
-module.exports = { syncDrive, getLastSyncInfo, credentialsExist };
+module.exports = { syncDrive, getLastSyncInfo, credentialsExist, fetchBuffer };
