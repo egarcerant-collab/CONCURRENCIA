@@ -190,6 +190,36 @@ app.get('/api/drive-proxy', async (req, res) => {
   }
 });
 
+// ── Upload a Google Drive desde servidor (evita CORS del browser) ──────────
+// POST /api/drive-upload  body: { content: "<json-string>", name: "archivo.json", folderId: "...", token: "ya29.xxx" }
+app.post('/api/drive-upload', express.json({ limit: '300mb' }), async (req, res) => {
+  try {
+    const { content, name, folderId, token } = req.body || {};
+    if (!content || !name) return res.status(400).json({ error: 'Faltan content y name' });
+    if (!token)            return res.status(400).json({ error: 'Falta token OAuth de Google Drive' });
+
+    const metadata  = JSON.stringify({ name, parents: folderId ? [folderId] : [], mimeType: 'application/json' });
+    const boundary  = 'upload_boundary_dusak';
+    const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+
+    const driveRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': `multipart/related; boundary="${boundary}"` },
+      body: multipart,
+      signal: AbortSignal.timeout(300000),
+    });
+
+    if (driveRes.ok) {
+      const data = await driveRes.json();
+      return res.json({ ok: true, fileId: data.id, link: `https://drive.google.com/file/d/${data.id}/view` });
+    }
+    const err = await driveRes.text();
+    return res.status(502).json({ ok: false, error: err.slice(0, 300) });
+  } catch(e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Cron diario Vercel — descarga automática del hospital a las 7 AM Colombia
 app.get('/api/hospital-sync', async (req, res) => {
   if (syncInProgress) return res.json({ ok: false, message: 'Ya en progreso' });
