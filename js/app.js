@@ -737,6 +737,15 @@ const APP = (() => {
           window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
             .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
         }
+        // Firebase Storage: guardar compartido para todos los usuarios
+        if (window.FB_STORE_API && window.FB_STORE_API.getConfig().bucket && sourceKey !== 'pyp') {
+          toast('☁️ Subiendo a Firebase…', 'info');
+          window.FB_STORE_API.fbUpload(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
+            .then(ok => {
+              if (ok) toast(`✅ ${src?.label||sourceKey}: disponible para todos los usuarios en Firebase`, 'success');
+              else toast('⚠️ Firebase: no se pudo subir. Verifica la configuración.', 'info');
+            });
+        }
         updateStatusBar();
         // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
         if (sourceKey === 'detallado') navigate('dashboard'); else render();
@@ -837,7 +846,20 @@ const APP = (() => {
         } catch(e) {}
       }
 
-      // 4. IndexedDB — respaldo local sin límite de 5 MB (todas las tablas)
+      // 4. Firebase Storage — respaldo compartido (todos los usuarios, sin cuota egress)
+      if (!d || !d.rows || !d.rows.length) {
+        if (window.FB_STORE_API && window.FB_STORE_API.getConfig().bucket) {
+          try {
+            const fb = await window.FB_STORE_API.fbDownload(key);
+            if (fb?.rows?.length) {
+              d = { rows: fb.rows, fileName: fb.fileName, uploadedAt: fb.uploadedAt };
+              console.info(`[Firebase] ${key}: ${d.rows.length} filas restauradas`);
+            }
+          } catch(e) {}
+        }
+      }
+
+      // 5. IndexedDB — respaldo local sin límite de 5 MB (todas las tablas)
       if (!d || !d.rows || !d.rows.length) {
         if (window.IDB_STORE_API) {
           try {
@@ -3128,6 +3150,32 @@ const APP = (() => {
         </div>
       </div>
 
+      <!-- ── FIREBASE ── -->
+      ${(() => {
+        const fbCfg = window.FB_STORE_API ? window.FB_STORE_API.getConfig() : {};
+        const fbOk  = !!fbCfg.bucket;
+        return `<div class="upload-section" style="border:2px solid #f57c00;background:linear-gradient(135deg,#fff8e1,#fff);margin-bottom:20px">
+          <h3 style="color:#e65100;margin:0 0 6px">🔥 Firebase Storage — Compartido entre usuarios</h3>
+          <p style="font-size:12px;color:#666;margin:0 0 12px">
+            ${fbOk
+              ? `✅ Conectado · Bucket: <code style="background:#fff3e0;padding:1px 6px;border-radius:4px">${fbCfg.bucket}</code>`
+              : 'Sin configurar. Pega el bucket de tu proyecto Firebase para activar el almacenamiento compartido.'}
+          </p>
+          ${!fbOk ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <input id="fb-bucket-input" type="text" placeholder="proyecto-xxxxx.appspot.com"
+              style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid #ffcc80;border-radius:8px;font-size:12px;outline:none">
+            <button onclick="APP.firebaseConfigSave()"
+              style="padding:8px 18px;background:#f57c00;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              💾 Guardar y conectar
+            </button>
+          </div>` : `<button onclick="APP.firebaseConfigClear()"
+            style="padding:6px 14px;background:#fff;border:1.5px solid #f57c00;color:#e65100;border-radius:8px;font-size:12px;cursor:pointer">
+            🔌 Desconectar Firebase
+          </button>`}
+          <div id="fb-status" style="font-size:11px;color:#999;margin-top:6px"></div>
+        </div>`;
+      })()}
+
       <!-- ── INDEXEDDB ── -->
       <div class="upload-section" style="border:2px solid #546e7a;background:linear-gradient(135deg,#eceff1,#fff);margin-bottom:20px">
         <h3 style="color:#37474f;margin:0 0 6px">💾 Almacenamiento Local — IndexedDB</h3>
@@ -4300,6 +4348,34 @@ const APP = (() => {
       await window.IDB_STORE_API.idbDelete(key);
       toast(`🗑️ IndexedDB: ${key.toUpperCase()} eliminado`,'info');
       APP.idbRefresh();
+    },
+
+    firebaseConfigSave: () => {
+      const input = document.getElementById('fb-bucket-input');
+      const bucket = (input?.value || '').trim();
+      if (!bucket) { toast('⚠️ Ingresa el nombre del bucket Firebase','info'); return; }
+      if (!window.FB_STORE_API) { toast('❌ firebase-store.js no cargado','error'); return; }
+      window.FB_STORE_API.fbSetConfig({ bucket });
+      toast('🔥 Firebase configurado — probando conexión…','info');
+      // Probar conexión intentando listar
+      window.FB_STORE_API.fbList().then(items => {
+        const st = document.getElementById('fb-status');
+        if (st) st.textContent = items.length > 0
+          ? `✅ Conectado · ${items.length} archivo(s) en Firebase`
+          : '✅ Bucket accesible · Sin archivos aún (normal en proyecto nuevo)';
+        toast('✅ Firebase conectado correctamente','success');
+        admin();
+      }).catch(() => {
+        toast('⚠️ No se pudo conectar a Firebase. Verifica el bucket y las reglas de Storage.','info');
+      });
+    },
+
+    firebaseConfigClear: () => {
+      if (!window.FB_STORE_API) return;
+      window.FB_STORE_API.fbSetConfig({ bucket: '', apiKey: '' });
+      try { localStorage.removeItem('fb_cfg'); } catch(e) {}
+      toast('🔌 Firebase desconectado','info');
+      admin();
     },
 
     state
