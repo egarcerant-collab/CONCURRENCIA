@@ -732,6 +732,11 @@ const APP = (() => {
         // Nube: solo columnas esenciales (evita límite de 50MB de Supabase)
         const rowsCloud = slimRows(sourceKey, rows);
         saveToServer(sourceKey.toUpperCase(), rowsCloud, file.name, meta);
+        // IndexedDB: guardar filas completas localmente (sin límite de 5MB)
+        if (window.IDB_STORE_API && sourceKey !== 'pyp') {
+          window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
+            .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
+        }
         updateStatusBar();
         // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
         if (sourceKey === 'detallado') navigate('dashboard'); else render();
@@ -832,13 +837,26 @@ const APP = (() => {
         } catch(e) {}
       }
 
-      // 4. localStorage — SOLO emergencia total (sin red, sin servidor, sin GSheets)
+      // 4. IndexedDB — respaldo local sin límite de 5 MB (todas las tablas)
+      if (!d || !d.rows || !d.rows.length) {
+        if (window.IDB_STORE_API) {
+          try {
+            const idb = await window.IDB_STORE_API.idbLoad(key);
+            if (idb?.rows?.length) {
+              d = { rows: idb.rows, fileName: idb.fileName, uploadedAt: idb.uploadedAt };
+              console.info(`[IDB] ${key}: ${d.rows.length} filas restauradas desde IndexedDB`);
+            }
+          } catch(e) {}
+        }
+      }
+
+      // 5. localStorage — último recurso (solo para DATOS, límite 5 MB)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
           if (raw) {
             d = JSON.parse(raw);
-            if (d?.rows?.length) console.warn(`[loadSaved] ${table}: usando caché local (Supabase no disponible)`);
+            if (d?.rows?.length) console.warn(`[loadSaved] ${table}: usando caché localStorage (sin IDB ni red)`);
           }
         } catch(e) {}
       }
@@ -3110,6 +3128,18 @@ const APP = (() => {
         </div>
       </div>
 
+      <!-- ── INDEXEDDB ── -->
+      <div class="upload-section" style="border:2px solid #546e7a;background:linear-gradient(135deg,#eceff1,#fff);margin-bottom:20px">
+        <h3 style="color:#37474f;margin:0 0 6px">💾 Almacenamiento Local — IndexedDB</h3>
+        <p style="font-size:12px;color:#666;margin:0 0 12px">
+          Respaldo sin límite en el navegador. Se restaura automáticamente cuando Supabase no está disponible.
+        </p>
+        <div id="idb-status-panel" style="font-size:12px;color:#999">Consultando…</div>
+        <button onclick="APP.idbRefresh()" style="margin-top:10px;padding:6px 16px;background:#546e7a;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
+          🔄 Actualizar estado
+        </button>
+      </div>
+
       <!-- ── RESUMEN ── -->
       ${totalMain > 0 ? `
       <div class="upload-section">
@@ -3125,6 +3155,8 @@ const APP = (() => {
           ${state.res202Rows.length ? kpi('Res. 202',fmtN(state.res202Rows.length),'registros',state.fileNames.res202||'','orange','📄') : ''}
         </div>
       </div>` : ''}`;
+    // Cargar estado IDB después de pintar el panel
+    setTimeout(() => APP.idbRefresh && APP.idbRefresh(), 200);
   }
 
   function datos() {
@@ -4227,10 +4259,49 @@ const APP = (() => {
       delete state.fileNames[key];
       try { localStorage.removeItem(LS_PREFIX + key.toUpperCase()); } catch(e) {}
       fetch('/api/data/'+key.toUpperCase(), {method:'DELETE'}).catch(()=>{});
+      if (window.IDB_STORE_API) window.IDB_STORE_API.idbDelete(key);
       updateStatusBar();
       datos();
       toast(`🗑️ Fuente ${key.toUpperCase()} eliminada`,'info');
     },
+
+    idbRefresh: async () => {
+      const panel = document.getElementById('idb-status-panel');
+      if (!panel) return;
+      if (!window.IDB_STORE_API) {
+        panel.innerHTML = '<span style="color:#e74c3c">IndexedDB no disponible en este navegador.</span>';
+        return;
+      }
+      const entries = await window.IDB_STORE_API.idbList();
+      if (!entries.length) {
+        panel.innerHTML = '<span style="color:#999">Sin datos guardados en IndexedDB.</span>';
+        return;
+      }
+      const labels = { detallado:'DETALLADO', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CyD', estancia:'Estancia', res202:'Res. 202', pyp:'PyP' };
+      panel.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+        ${entries.map(e => {
+          const fecha = e.savedAt ? new Date(e.savedAt).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+          return `<div style="background:#fff;border:1px solid #b0bec5;border-radius:8px;padding:10px 12px">
+            <div style="font-weight:600;color:#37474f">${labels[e.key]||e.key.toUpperCase()}</div>
+            <div style="font-size:11px;color:#546e7a;margin-top:2px">${fmtN(e.count||0)} registros</div>
+            <div style="font-size:10px;color:#90a4ae;margin-top:2px">Guardado: ${fecha}</div>
+            <div style="font-size:10px;color:#90a4ae;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.fileName}">${e.fileName}</div>
+            <button onclick="APP.idbBorrar('${e.key}')"
+              style="margin-top:8px;padding:3px 10px;background:#e57373;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer">
+              🗑️ Borrar
+            </button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    },
+
+    idbBorrar: async (key) => {
+      if (!window.IDB_STORE_API) return;
+      await window.IDB_STORE_API.idbDelete(key);
+      toast(`🗑️ IndexedDB: ${key.toUpperCase()} eliminado`,'info');
+      APP.idbRefresh();
+    },
+
     state
   };
 })();
