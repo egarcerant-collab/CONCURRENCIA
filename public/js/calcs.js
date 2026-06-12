@@ -111,16 +111,23 @@ const CALCS = (() => {
   }
 
   // ── Filtros ──────────────────────────────────────────────
+  function _excelSerialToISO(n) {
+    const d = new Date(Math.round((n - 25569) * 86400000));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
   // Extrae la fecha más relevante de una fila (intenta varios nombres de campo)
   function getFecha(row) {
-    return String(
-      get(row,'Fecha Ingreso')   || get(row,'fecha_solicitud')  ||
-      get(row,'Fecha Egreso')    || get(row,'FECHA EGRESO')     ||
-      get(row,'FECHA INGRESO')   || get(row,'FECHA')            ||
-      get(row,'FECHA ALTA')      || get(row,'fecha_alta')       ||
-      get(row,'FECHA SOLICITUD') || get(row,'Fecha')            ||
-      get(row,'FECHA INSCRIPCION PROGRAMA DE HTA - DM)') || ''
-    );
+    const raw = get(row,'Fecha Ingreso')   || get(row,'fecha_solicitud')  ||
+                get(row,'Fecha Egreso')    || get(row,'FECHA EGRESO')     ||
+                get(row,'FECHA INGRESO')   || get(row,'FECHA')            ||
+                get(row,'FECHA ALTA')      || get(row,'fecha_alta')       ||
+                get(row,'FECHA SOLICITUD') || get(row,'Fecha')            ||
+                get(row,'FECHA INSCRIPCION PROGRAMA DE HTA - DM)') || '';
+    // Detectar serial Excel (número entero 25000–80000 = años 1968–2119)
+    if (typeof raw === 'number' && raw > 25000 && raw < 80000) return _excelSerialToISO(raw);
+    const s = String(raw);
+    if (/^\d{5}$/.test(s.trim())) { const n = Number(s); if (n > 25000 && n < 80000) return _excelSerialToISO(n); }
+    return s;
   }
   // Verifica si una fecha (string) pertenece a un mes dado (mm '01'..'12')
   function fechaEnMes(f, mp) {
@@ -182,7 +189,7 @@ const CALCS = (() => {
     ).filter(Boolean))].sort();
     const anios = [...new Set(rows.map(r => {
       const f = String(get(r,'Fecha Ingreso')||get(r,'fecha_solicitud')||'');
-      const m = f.match(/(\d{4})/); return m?m[1]:null;
+      const m = f.match(/\b(19\d{2}|20\d{2})\b/); return m?m[1]:null;
     }).filter(Boolean))].sort().reverse();
     const departamentos = [...new Set(rows.map(r =>
       get(r,'Departamento')||get(r,'DEPARTAMENTO')||''
