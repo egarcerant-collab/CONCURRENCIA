@@ -805,15 +805,14 @@ const APP = (() => {
 
   // ── Timestamp de la última carga desde Supabase ─────────────
   let _lastSupaLoad = 0;
-  const REFRESH_MS = 30 * 60 * 1000; // 30 minutos
+  const IDB_MAX_AGE_MS = 23 * 60 * 60 * 1000; // 23 horas — evita agotar egress de Supabase
 
-  // Cargar datos SIEMPRE desde Supabase (fuente única y autoritativa)
-  // localStorage solo como último recurso si Supabase es inaccesible
-  async function loadSaved(silencioso = false) {
+  // Estrategia IDB-first: usar caché local si es reciente, Supabase solo cuando es necesario
+  async function loadSaved(silencioso = false, forzarNube = false) {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP', res202:'RES202'};
 
     const hasSupa = !!window.SUPA_DB;
-    if (!silencioso) toast('☁️ Sincronizando con la nube...','info');
+    if (!silencioso) toast('📂 Cargando datos...','info');
 
     // Verificar servidor local (solo útil en localhost/dev)
     let servidorOk = false;
@@ -825,9 +824,28 @@ const APP = (() => {
     for (const [key, table] of Object.entries(tables)) {
       let d = null;
 
-      // 1. SUPABASE — fuente principal y única (siempre fresco, sin caché)
-      if (hasSupa) {
-        try { d = await window.SUPA_DB.supaDownload(table); } catch(e) {}
+      // 0. IndexedDB — si los datos son recientes (<23h) los usamos sin tocar Supabase
+      if (!forzarNube && window.IDB_STORE_API) {
+        try {
+          const idb = await window.IDB_STORE_API.idbLoad(key);
+          if (idb?.rows?.length) {
+            const edad = Date.now() - new Date(idb.savedAt || 0).getTime();
+            if (edad < IDB_MAX_AGE_MS) {
+              d = { rows: idb.rows, fileName: idb.fileName, uploadedAt: idb.uploadedAt };
+              console.info(`[IDB] ${key}: ${d.rows.length} filas (caché ${Math.round(edad/3600000)}h)`);
+            }
+          }
+        } catch(e) {}
+      }
+
+      // 1. SUPABASE — solo si IDB está vacío, desactualizado o se forzó recarga
+      if (!d && hasSupa) {
+        try {
+          d = await window.SUPA_DB.supaDownload(table);
+          if (d?.rows?.length && window.IDB_STORE_API) {
+            window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName||table, uploadedAt: d.uploadedAt });
+          }
+        } catch(e) {}
       }
 
       // 2. Servidor local — solo en localhost/dev si Supabase no responde
@@ -840,8 +858,9 @@ const APP = (() => {
         try {
           d = await window.SUPA_DB.gSheetsDownload();
           if (d?.rows?.length) {
-            console.warn('[loadSaved] DATOS: cargado desde Google Sheets (respaldo de emergencia)');
-            toast('☁️ Datos cargados desde Google Sheets (respaldo)', 'info');
+            console.warn('[loadSaved] DATOS: cargado desde Google Sheets');
+            toast('☁️ Datos desde Google Sheets (respaldo)', 'info');
+            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: 'Google Sheets', uploadedAt: d.uploadedAt });
           }
         } catch(e) {}
       }
@@ -854,25 +873,26 @@ const APP = (() => {
             if (fb?.rows?.length) {
               d = { rows: fb.rows, fileName: fb.fileName, uploadedAt: fb.uploadedAt };
               console.info(`[Firebase] ${key}: ${d.rows.length} filas restauradas`);
+              if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt });
             }
           } catch(e) {}
         }
       }
 
-      // 5. IndexedDB — respaldo local sin límite de 5 MB (todas las tablas)
+      // 5. IndexedDB — cualquier versión (aunque sea vieja) si todo lo demás falló
       if (!d || !d.rows || !d.rows.length) {
         if (window.IDB_STORE_API) {
           try {
             const idb = await window.IDB_STORE_API.idbLoad(key);
             if (idb?.rows?.length) {
               d = { rows: idb.rows, fileName: idb.fileName, uploadedAt: idb.uploadedAt };
-              console.info(`[IDB] ${key}: ${d.rows.length} filas restauradas desde IndexedDB`);
+              console.info(`[IDB] ${key}: ${d.rows.length} filas (caché sin límite de edad)`);
             }
           } catch(e) {}
         }
       }
 
-      // 5. localStorage — último recurso (solo para DATOS, límite 5 MB)
+      // 6. localStorage — último recurso (solo para DATOS, límite 5 MB)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
@@ -3364,15 +3384,14 @@ const APP = (() => {
     navigate, render,
     // Recargar datos desde Supabase manualmente (para cuando el auto-load no funciona)
     recargarNube: async () => {
-      toast('☁️ Recargando desde Supabase...','info');
-      const prevRows = state.rows.length;
-      await loadSaved();
+      toast('☁️ Recargando desde Supabase (ignorando caché)...','info');
+      await loadSaved(false, true); // forzarNube = true → salta IDB
       if (state.rows.length > 0) {
         navigate('dashboard');
-        toast(`✅ ${fmtN(state.rows.length)} registros restaurados desde la nube`,'success');
+        toast(`✅ ${fmtN(state.rows.length)} registros actualizados desde Supabase`,'success');
       } else {
         toast('⚠️ No se encontraron datos en Supabase. Sube el Excel primero.','error');
-        datos(); // refrescar tab datos
+        datos();
       }
     },
     setFilter: (k,v) => { state.filters[k]=v; render(); },
