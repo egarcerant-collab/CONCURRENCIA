@@ -6,8 +6,8 @@ const MAX_JSON_MB = 20;
 const SUPA_TIMEOUT_MS = 12000; // 12 s máximo para cada descarga
 
 // ── Google Sheets — respaldo cuando Supabase no responde ─────
-// ID de la hoja: https://docs.google.com/spreadsheets/d/ID/edit
-const GSHEETS_ID = '1Uoj-zA7Q3TC7_1TcPJ6EzzcKB1XXpWni';
+const GSHEETS_ID  = '1Uoj-zA7Q3TC7_1TcPJ6EzzcKB1XXpWni';
+const GSHEETS_PUB = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSSI7sQ7ra8c3NoggDYwVZi7eKeS62ImJcOyiRbSDAnvZNtO-61mCsyrtGTtgG_Ow/pub?gid=1292237722&single=true&output=csv';
 
 const COLS_ESENCIALES = {
   DATOS: [
@@ -158,6 +158,7 @@ async function gSheetsDownload(sheetId) {
   const id = sheetId || GSHEETS_ID;
   // Intentar vía gviz (funciona con hojas publicadas en la web)
   const urls = [
+    GSHEETS_PUB,
     `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv`,
     `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`,
   ];
