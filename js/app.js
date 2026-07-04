@@ -3110,6 +3110,29 @@ const APP = (() => {
           </button>
           <span style="font-size:11px;color:#888">Restaura los datos ya guardados en la nube</span>
         </div>
+
+        <!-- ── COMPARTIR DATOS CON COMPAÑEROS ── -->
+        <div style="margin-top:14px;padding:14px 16px;background:#e8f5e9;border:2px solid #27ae60;border-radius:10px">
+          <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:8px">🔄 Compartir datos con compañeros</div>
+          <p style="font-size:11px;color:#555;margin:0 0 10px">
+            ¿Tienes la versión más reciente y tus compañeros ven datos viejos?
+            Exporta como archivo JSON y envíaselo (WhatsApp, correo). Ellos lo importan y verán los mismos datos.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button onclick="APP.exportarCompartir()"
+              style="padding:8px 18px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              ⬇️ Exportar datos (JSON)
+            </button>
+            <label style="cursor:pointer">
+              <input type="file" accept=".json" onchange="APP.importarCompartir(this)" style="display:none">
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#1a4f7a;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+                ⬆️ Importar datos de compañero
+              </span>
+            </label>
+          </div>
+          <div id="compartir-status" style="font-size:11px;color:#888;margin-top:8px"></div>
+        </div>
+
         <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:200px;overflow-y:auto">
           <div id="drive-log-content"></div>
         </div>
@@ -4395,6 +4418,69 @@ const APP = (() => {
       try { localStorage.removeItem('fb_cfg'); } catch(e) {}
       toast('🔌 Firebase desconectado','info');
       admin();
+    },
+
+    exportarCompartir: () => {
+      if (!state.rows.length) { toast('⚠️ No hay datos cargados para exportar','info'); return; }
+      const payload = {
+        rows: state.rows,
+        fileName:   state.fileNames?.detallado || 'DETALLADO',
+        uploadedAt: state.uploadedAt?.detallado || new Date().toISOString(),
+        exportedAt: new Date().toISOString(),
+        count: state.rows.length,
+        version: 'dusakawi-v1',
+      };
+      const json = JSON.stringify(payload);
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const fecha = new Date().toISOString().slice(0,10);
+      a.download = `DUSAKAWI_DATOS_${fecha}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      const mb = (json.length / 1024 / 1024).toFixed(1);
+      toast(`✅ ${fmtN(state.rows.length)} registros exportados (${mb} MB) — envía este archivo a tus compañeros`, 'success');
+      const st = document.getElementById('compartir-status');
+      if (st) st.textContent = `Último export: ${fmtN(state.rows.length)} registros · ${mb} MB · ${new Date().toLocaleString('es-CO')}`;
+    },
+
+    importarCompartir: (input) => {
+      const file = input?.files?.[0];
+      if (!file) return;
+      input.value = '';
+      const st = document.getElementById('compartir-status');
+      if (st) st.textContent = 'Leyendo archivo…';
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data?.rows?.length || data.version !== 'dusakawi-v1') {
+            toast('❌ Archivo no válido o generado por otro sistema', 'error');
+            if (st) st.textContent = 'Error: archivo no válido';
+            return;
+          }
+          state.rows = data.rows;
+          if (!state.fileNames) state.fileNames = {};
+          if (!state.uploadedAt) state.uploadedAt = {};
+          state.fileNames.detallado = data.fileName || file.name;
+          state.uploadedAt.detallado = data.uploadedAt || data.exportedAt;
+          state.meta = window.CALCS ? window.CALCS.extractMeta(data.rows) : {};
+          if (window.IDB_STORE_API) {
+            await window.IDB_STORE_API.idbSave('detallado', data.rows, {
+              fileName: data.fileName || file.name,
+              uploadedAt: data.uploadedAt || data.exportedAt,
+            });
+          }
+          render();
+          navigate('dashboard');
+          toast(`✅ ${fmtN(data.rows.length)} registros importados y guardados localmente`, 'success');
+          if (st) st.textContent = `Importado: ${fmtN(data.rows.length)} registros de ${data.exportedAt ? new Date(data.exportedAt).toLocaleString('es-CO') : 'fecha desconocida'}`;
+        } catch (err) {
+          toast('❌ Error al leer el archivo JSON', 'error');
+          if (st) st.textContent = 'Error: ' + err.message;
+        }
+      };
+      reader.readAsText(file);
     },
 
     state
