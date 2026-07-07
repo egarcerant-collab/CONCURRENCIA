@@ -746,6 +746,15 @@ const APP = (() => {
               else toast('⚠️ Firebase: no se pudo subir. Verifica la configuración.', 'info');
             });
         }
+        // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
+        if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
+          const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
+          if (gscriptUrl) {
+            toast('📊 Sincronizando con Google Sheets…', 'info');
+            window.SUPA_DB.gSheetsWrite(gscriptUrl, rows)
+              .then(() => toast('✅ Google Sheets actualizado — todos los compañeros verán los datos nuevos', 'success'));
+          }
+        }
         updateStatusBar();
         // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
         if (sourceKey === 'detallado') navigate('dashboard'); else render();
@@ -3125,17 +3134,31 @@ const APP = (() => {
         <!-- Paso 2: Preview + botón confirmar (oculto hasta selección) -->
         <div id="admin-file-preview" style="display:none;margin-top:14px;padding:12px 16px;background:#f0f7ff;border:1.5px solid #2980b9;border-radius:8px;font-size:13px"></div>
 
-        <!-- Recargar desde nube -->
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d1dce8;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button onclick="APP.recargarNube()"
-            style="padding:9px 20px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-            🔄 Recargar desde Supabase
-          </button>
-          <button onclick="APP.recargarGSheets()"
-            style="padding:9px 20px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-            📊 Recargar desde Google Sheets
-          </button>
-          <span style="font-size:11px;color:#888">Si actualizaste la hoja de cálculo, usa este botón</span>
+        <!-- Sincronización con Google Sheets -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d1dce8">
+          <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:8px">🔗 Google Sheets — Sincronización automática</div>
+          <p style="font-size:11px;color:#555;margin:0 0 10px">
+            Cuando subes un archivo Excel, los datos se escriben automáticamente en la hoja compartida.
+            Todos los compañeros verán los datos actualizados al instante.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <input id="gscript-url-input" type="text"
+              placeholder="https://script.google.com/macros/s/…/exec"
+              value="${(function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })()}"
+              style="flex:1;min-width:260px;padding:8px 12px;border:1.5px solid #34a853;border-radius:8px;font-size:12px;outline:none">
+            <button onclick="APP.guardarGScriptUrl()"
+              style="padding:8px 16px;background:#34a853;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              💾 Guardar URL
+            </button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button onclick="APP.recargarGSheets()"
+              style="padding:8px 18px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
+              📊 Recargar desde Google Sheets
+            </button>
+            <span style="font-size:11px;color:#888">Fuerza la recarga si alguien actualizó la hoja manualmente</span>
+          </div>
+          <div id="gscript-status" style="font-size:11px;color:#888;margin-top:6px"></div>
         </div>
 
         <!-- ── COMPARTIR DATOS CON COMPAÑEROS ── -->
@@ -3173,7 +3196,7 @@ const APP = (() => {
           Los archivos deben estar compartidos con "Cualquiera con el enlace puede ver".
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-          <a href="https://drive.google.com/drive/folders/1GvJuv9M4tssWIKwI9gA5TyUqFLigLIQc?usp=sharing"
+          <a href="https://drive.google.com/drive/folders/1dQ6bSoBz3IWXksHG_LQG6cG4xgfgVJgV?usp=sharing"
             target="_blank" rel="noopener"
             style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#34a853;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">
             🔗 Abrir carpeta en Drive
@@ -3337,16 +3360,13 @@ const APP = (() => {
               📤 ${state.tipoReporte===1?'Actualizar Detallado':'Subir Detallado'}
             </span>
           </label>
-          <button onclick="APP.recargarNube()"
-            style="padding:11px 24px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
-            🔄 Recargar desde Supabase
+          <button onclick="APP.recargarGSheets()"
+            style="padding:11px 24px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+            📊 Recargar desde Google Sheets
           </button>
         </div>
         <div style="margin-top:10px">
-          <button onclick="APP.recargarNube()" style="padding:8px 18px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
-            🔄 Recargar desde Supabase
-          </button>
-          <span style="font-size:11px;color:#888;margin-left:10px">Si ya subiste datos antes, esto los restaura desde la nube</span>
+          <span style="font-size:11px;color:#888">Al subir un archivo Excel se sincroniza automáticamente con Google Sheets</span>
         </div>
         <div id="drive-log-box" style="display:none;margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;color:#a8ff78;max-height:220px;overflow-y:auto">
           <div id="drive-log-content"></div>
@@ -4466,6 +4486,19 @@ const APP = (() => {
       try { localStorage.removeItem('fb_cfg'); } catch(e) {}
       toast('🔌 Firebase desconectado','info');
       admin();
+    },
+
+    guardarGScriptUrl: () => {
+      const input = document.getElementById('gscript-url-input');
+      const url = (input?.value || '').trim();
+      if (!url || !url.startsWith('https://script.google.com')) {
+        toast('⚠️ URL inválida. Debe empezar con https://script.google.com', 'info');
+        return;
+      }
+      try { localStorage.setItem('gscript_url', url); } catch(e) {}
+      toast('✅ URL del Apps Script guardada. Los próximos uploads sincronizarán automáticamente.', 'success');
+      const st = document.getElementById('gscript-status');
+      if (st) st.textContent = '✅ URL configurada: ' + url.slice(0, 60) + '…';
     },
 
     exportarCompartir: () => {

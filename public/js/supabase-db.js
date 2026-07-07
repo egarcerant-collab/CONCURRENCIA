@@ -199,4 +199,25 @@ async function supaCheck() {
   } catch(e) { return false; }
 }
 
-window.SUPA_DB = { supaUpload, supaUploadDirect, supaDownload, supaCheck, gSheetsDownload };
+// ── Escribir filas en Google Sheets via Apps Script Web App ──
+// Usa text/plain + no-cors: el browser envía la petición pero no puede leer la respuesta
+async function gSheetsWrite(scriptUrl, rows) {
+  if (!scriptUrl) { console.warn('[GSheets Write] URL no configurada'); return false; }
+  try {
+    const slim = filtrarColumnas('DATOS', rows);
+    const payload = JSON.stringify({ rows: slim, updatedAt: new Date().toISOString(), count: slim.length });
+    await fetch(scriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: payload,
+    });
+    console.info(`[GSheets Write] ✅ ${slim.length} filas enviadas a Google Sheets`);
+    return true;
+  } catch(e) {
+    console.warn('[GSheets Write] Error:', e.message);
+    return false;
+  }
+}
+
+window.SUPA_DB = { supaUpload, supaUploadDirect, supaDownload, supaCheck, gSheetsDownload, gSheetsWrite };
