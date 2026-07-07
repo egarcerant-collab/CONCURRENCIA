@@ -544,62 +544,43 @@ const APP = (() => {
     readFile(file, async (err, rows) => {
       if (err) { toast('❌ '+err.message,'error'); setSpan('📤 Subir Detallado'); return; }
 
-      // 1. Mostrar en pantalla inmediatamente
       state.rows = rows;
       state.meta = CALCS.extractMeta(rows);
       state.fileNames.detallado = file.name;
       state.tipoReporte = 1;
       state.source = 'manual-upload';
       state.uploadedAt.detallado = new Date().toISOString();
+      if (window.IDB_STORE_API) {
+        window.IDB_STORE_API.idbSave('detallado', rows, { fileName: file.name, uploadedAt: new Date().toISOString() }).catch(()=>{});
+      }
       updateStatusBar();
       navigate('dashboard');
-      toast(`⏳ ${fmtN(rows.length)} registros leídos. Guardando en Supabase…`,'info');
-      setSpan('⏳ Guardando…');
+      toast(`✅ ${fmtN(rows.length)} registros cargados`, 'success');
+      setSpan('📤 Subir Detallado');
 
-      // 2. Guardar en Supabase — intenta directo desde el browser primero
-      let supaOk = false;
-      if (window.SUPA_DB) {
-        supaOk = await window.SUPA_DB.supaUpload('DATOS', rows, file.name,
-          { source: 'manual-upload', tipoReporte: 1 });
-      }
-
-      // 3. Si el upload directo falla, intentar via el servidor (fallback)
-      if (!supaOk) {
-        console.log('[upload] Supabase directo falló — intentando via servidor...');
-        try {
-          // Filtrar columnas esenciales para reducir el payload
-          const rowsFilt = filtrarEsenciales(rows);
-          const body = JSON.stringify({
-            rows: rowsFilt, fileName: file.name,
-            tipoReporte: 1, source: 'manual-upload'
-          });
-          const mbSize = body.length / 1024 / 1024;
-          console.log(`[upload-server] payload: ${mbSize.toFixed(2)} MB`);
-          if (mbSize <= 4.0) { // Margen de seguridad bajo el límite de Vercel (4.5MB)
-            const r = await fetch('/api/save-detallado', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body
-            }).then(x => x.json());
-            supaOk = r && r.ok;
-            if (supaOk) console.log('[upload-server] ✅ guardado via servidor');
-            else console.warn('[upload-server] ❌', r && r.error);
-          } else {
-            console.warn(`[upload-server] payload muy grande (${mbSize.toFixed(2)} MB > 4 MB), omitiendo ruta servidor`);
-          }
-        } catch(e) {
-          console.warn('[upload-server] excepción:', e.message);
+      // GitHub Gist: almacenamiento compartido principal
+      if (window.GIST_STORE_API) {
+        const gCfg = window.GIST_STORE_API.gistGetConfig();
+        if (gCfg.token) {
+          toast('⬆️ Subiendo a GitHub Gist…', 'info');
+          const slim = slimRows('detallado', rows);
+          window.GIST_STORE_API.gistUpload('detallado', slim, { fileName: file.name, uploadedAt: new Date().toISOString() })
+            .then(r => {
+              if (r?.ok) {
+                try { localStorage.setItem('gist_cfg', JSON.stringify(window.GIST_STORE_API.gistGetConfig())); } catch(e) {}
+                toast('✅ Datos en GitHub Gist — todos los compañeros verán los datos nuevos', 'success');
+              } else {
+                toast(`⚠️ Gist: ${r?.errorMsg || 'Error al subir'}`, 'info');
+              }
+            });
         }
       }
 
-      if (supaOk) {
-        render();
-        toast(`✅ ${fmtN(rows.length)} registros guardados en Supabase ☁️`,'success');
-      } else {
-        // Aunque no se guardó en Supabase, los datos están en pantalla
-        toast(`⚠️ ${fmtN(rows.length)} registros cargados. Error al guardar en la nube — presiona "💾 Guardar en Supabase" para reintentar.`,'error');
+      // Google Sheets: sincronización automática si está configurado
+      if (window.SUPA_DB?.gSheetsWrite) {
+        const gscriptUrl = (() => { try { return localStorage.getItem('gscript_url') || ''; } catch(e) { return ''; } })();
+        if (gscriptUrl) window.SUPA_DB.gSheetsWrite(gscriptUrl, rows).catch(()=>{});
       }
-      setSpan('📤 Subir Detallado');
     });
   }
 
@@ -737,15 +718,6 @@ const APP = (() => {
           window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
             .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
         }
-        // Firebase Storage: guardar compartido para todos los usuarios
-        if (window.FB_STORE_API && window.FB_STORE_API.getConfig().bucket && sourceKey !== 'pyp') {
-          toast('☁️ Subiendo a Firebase…', 'info');
-          window.FB_STORE_API.fbUpload(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
-            .then(ok => {
-              if (ok) toast(`✅ ${src?.label||sourceKey}: disponible para todos los usuarios en Firebase`, 'success');
-              else toast('⚠️ Firebase: no se pudo subir. Verifica la configuración.', 'info');
-            });
-        }
         // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
         if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
           const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
@@ -762,14 +734,14 @@ const APP = (() => {
             toast('⬆️ Subiendo a GitHub Gist…', 'info');
             const slimForGist = slimRows(sourceKey, rows);
             window.GIST_STORE_API.gistUpload('detallado', slimForGist, { fileName: file.name, uploadedAt: new Date().toISOString() })
-              .then(ok => {
-                if (ok) {
-                  // Guardar gistId para que los compañeros puedan descargarlo
+              .then(result => {
+                if (result?.ok) {
                   const cfg = window.GIST_STORE_API.gistGetConfig();
                   try { localStorage.setItem('gist_cfg', JSON.stringify(cfg)); } catch(e) {}
-                  toast('✅ Datos subidos a GitHub Gist — comparte el Gist ID con tus compañeros', 'success');
+                  toast('✅ Datos subidos a GitHub Gist — compañeros verán los datos nuevos automáticamente', 'success');
                 } else {
-                  toast('⚠️ Gist: no se pudo subir. Verifica el token.', 'info');
+                  const err = result?.errorMsg || 'Error desconocido';
+                  toast(`⚠️ Gist: no se pudo subir (${err})`, 'info');
                 }
               });
           }
@@ -788,26 +760,13 @@ const APP = (() => {
   const LS_PREFIX = 'ir_';
   const LS_MAX_MB = 4; // máximo ~4MB por fuente en localStorage
 
-  // meta: objeto opcional { source, tipoReporte } para identificar origen
   function saveToServer(table, rows, fileName, meta = {}) {
-    // 1. Intentar localStorage (para fuentes pequeñas)
     try {
       const payload = JSON.stringify({rows, fileName, ...meta});
       if (payload.length < LS_MAX_MB * 1024 * 1024) {
         localStorage.setItem(LS_PREFIX + table, payload);
       }
     } catch(e) {}
-    // 2. Supabase Storage (nube — persiste en Vercel, incluye meta)
-    if (window.SUPA_DB) {
-      window.SUPA_DB.supaUpload(table, rows, fileName, meta)
-        .then(ok => { if (ok) toast(`☁️ ${table} guardado en la nube`,'success'); })
-        .catch(()=>{});
-    }
-    // 3. Servidor local (solo en localhost)
-    fetch('/api/data/'+table, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({rows, fileName, ...meta})
-    }).catch(()=>{});
   }
 
   function updateStatusBar() {
@@ -824,35 +783,26 @@ const APP = (() => {
     if (lblUp)    lblUp.style.display    = 'none';
     const el = document.getElementById('data-status');
     if (total > 0) {
-      const hora = _lastSupaLoad ? new Date(_lastSupaLoad).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '';
+      const hora = _lastLoad ? new Date(_lastLoad).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '';
       el.innerHTML = fmtN(total)+(extra>0?` +${extra} fuentes`:'')+
         (hora ? ` <span style="font-size:10px;opacity:.8">· ☁️ ${hora}</span>` : '');
       el.style.background = '#27ae60';
     }
   }
 
-  // ── Timestamp de la última carga desde Supabase ─────────────
-  let _lastSupaLoad = 0;
-  const IDB_MAX_AGE_MS = 23 * 60 * 60 * 1000; // 23 horas — evita agotar egress de Supabase
+  let _lastLoad = 0;
+  const IDB_MAX_AGE_MS = 23 * 60 * 60 * 1000;
 
-  // Estrategia IDB-first: usar caché local si es reciente, Supabase solo cuando es necesario
+  // Cascada: IDB (cache 23h) → GitHub Gist → Google Sheets → IDB (viejo) → localStorage
   async function loadSaved(silencioso = false, forzarNube = false) {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP', res202:'RES202'};
 
-    const hasSupa = !!window.SUPA_DB;
     if (!silencioso) toast('📂 Cargando datos...','info');
-
-    // Verificar servidor local (solo útil en localhost/dev)
-    let servidorOk = false;
-    try {
-      const r = await fetch('/api/tables', {signal: AbortSignal.timeout(800)});
-      servidorOk = r.ok;
-    } catch(e) {}
 
     for (const [key, table] of Object.entries(tables)) {
       let d = null;
 
-      // 0. IndexedDB — si los datos son recientes (<23h) los usamos sin tocar Supabase
+      // 0. IndexedDB — caché local reciente (<23h)
       if (!forzarNube && window.IDB_STORE_API) {
         try {
           const idb = await window.IDB_STORE_API.idbLoad(key);
@@ -866,79 +816,50 @@ const APP = (() => {
         } catch(e) {}
       }
 
-      // 1. SUPABASE — solo si IDB está vacío, desactualizado o se forzó recarga
-      if (!d && hasSupa) {
-        try {
-          d = await window.SUPA_DB.supaDownload(table);
-          if (d?.rows?.length && window.IDB_STORE_API) {
-            window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName||table, uploadedAt: d.uploadedAt });
-          }
-        } catch(e) {}
-      }
-
-      // 2. Servidor local — solo en localhost/dev si Supabase no responde
-      if ((!d || !d.rows || !d.rows.length) && servidorOk) {
-        try { d = await fetch('/api/data/'+table, {cache:'no-store'}).then(r=>r.json()); } catch(e) {}
-      }
-
-      // 3. Google Sheets — respaldo cuando Supabase Y servidor fallan (solo para DATOS)
-      if ((!d || !d.rows || !d.rows.length) && table === 'DATOS' && window.SUPA_DB?.gSheetsDownload) {
-        try {
-          d = await window.SUPA_DB.gSheetsDownload();
-          if (d?.rows?.length) {
-            console.warn('[loadSaved] DATOS: cargado desde Google Sheets');
-            toast('☁️ Datos desde Google Sheets (respaldo)', 'info');
-            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: 'Google Sheets', uploadedAt: d.uploadedAt });
-          }
-        } catch(e) {}
-      }
-
-      // 4. GitHub Gist — almacenamiento compartido principal sin egress
-      if ((!d || !d.rows || !d.rows.length) && window.GIST_STORE_API?.gistIsReady()) {
+      // 1. GitHub Gist — almacenamiento compartido principal
+      if ((!d || !d.rows?.length) && window.GIST_STORE_API?.gistIsReady()) {
         try {
           const gd = await window.GIST_STORE_API.gistDownload(key);
           if (gd?.rows?.length) {
             d = { rows: gd.rows, fileName: gd.fileName, uploadedAt: gd.uploadedAt };
-            console.info(`[Gist] ${key}: ${d.rows.length} filas restauradas`);
+            console.info(`[Gist] ${key}: ${d.rows.length} filas`);
             if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt });
           }
         } catch(e) { console.warn('[Gist] Download error:', e.message); }
       }
 
-      // 5. Firebase Storage — respaldo compartido (todos los usuarios, sin cuota egress)
-      if (!d || !d.rows || !d.rows.length) {
-        if (window.FB_STORE_API && window.FB_STORE_API.getConfig().bucket) {
-          try {
-            const fb = await window.FB_STORE_API.fbDownload(key);
-            if (fb?.rows?.length) {
-              d = { rows: fb.rows, fileName: fb.fileName, uploadedAt: fb.uploadedAt };
-              console.info(`[Firebase] ${key}: ${d.rows.length} filas restauradas`);
-              if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt });
-            }
-          } catch(e) {}
-        }
+      // 2. Google Sheets — respaldo de solo lectura (solo DATOS)
+      if ((!d || !d.rows?.length) && table === 'DATOS' && window.SUPA_DB?.gSheetsDownload) {
+        try {
+          d = await window.SUPA_DB.gSheetsDownload();
+          if (d?.rows?.length) {
+            console.info('[GSheets] DATOS: cargado desde Google Sheets');
+            if (!silencioso) toast('📊 Datos desde Google Sheets', 'info');
+            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: 'Google Sheets', uploadedAt: d.uploadedAt });
+          }
+        } catch(e) {}
       }
 
-      // 6. IndexedDB — cualquier versión (aunque sea vieja) si todo lo demás falló
-      if (!d || !d.rows || !d.rows.length) {
+      // 3. IndexedDB — cualquier versión (aunque sea vieja)
+      if (!d || !d.rows?.length) {
         if (window.IDB_STORE_API) {
           try {
             const idb = await window.IDB_STORE_API.idbLoad(key);
             if (idb?.rows?.length) {
               d = { rows: idb.rows, fileName: idb.fileName, uploadedAt: idb.uploadedAt };
-              console.info(`[IDB] ${key}: ${d.rows.length} filas (caché sin límite de edad)`);
+              console.info(`[IDB] ${key}: ${d.rows.length} filas (caché sin límite)`);
             }
           } catch(e) {}
         }
       }
 
-      // 7. localStorage — último recurso (solo para DATOS, límite 5 MB)
-      if (!d || !d.rows || !d.rows.length) {
+      // 4. localStorage — último recurso
+      if (!d || !d.rows?.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
           if (raw) {
             d = JSON.parse(raw);
-            if (d?.rows?.length) console.warn(`[loadSaved] ${table}: usando caché localStorage (sin IDB ni red)`);
+            if (d?.rows?.length) console.warn(`[loadSaved] ${table}: localStorage (sin red)`);
           }
         } catch(e) {}
       }
@@ -975,32 +896,28 @@ const APP = (() => {
       }
     }
 
-    // Cargar mapa de auditores
+    // Cargar mapa de auditores (localStorage)
     try {
-      let a = null;
-      if (hasSupa) { try { a = await window.SUPA_DB.supaDownload('AUDITORES'); } catch(e) {} }
-      if ((!a || !a.rows) && servidorOk) {
-        try { a = await fetch('/api/data/AUDITORES',{cache:'no-store'}).then(r=>r.json()); } catch(e) {}
-      }
-      if (!a || !a.rows) {
-        try { const raw = localStorage.getItem(LS_PREFIX+'AUDITORES'); if(raw) a=JSON.parse(raw); } catch(e) {}
-      }
-      if (a && a.rows && a.rows.length) {
-        const map = {};
-        a.rows.forEach(r => { if (r.cedula && r.nombre) map[String(r.cedula).trim()] = r.nombre; });
-        CALCS.setAuditoresMap(map);
-        state.auditoresMap = map;
+      const raw = localStorage.getItem(LS_PREFIX+'AUDITORES');
+      if (raw) {
+        const a = JSON.parse(raw);
+        if (a?.rows?.length) {
+          const map = {};
+          a.rows.forEach(r => { if (r.cedula && r.nombre) map[String(r.cedula).trim()] = r.nombre; });
+          CALCS.setAuditoresMap(map);
+          state.auditoresMap = map;
+        }
       }
     } catch(e) {}
 
-    _lastSupaLoad = Date.now();
+    _lastLoad = Date.now();
     updateStatusBar();
 
     if (state.rows.length) {
       const hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
-      if (!silencioso) toast(`✅ ${fmtN(state.rows.length)} registros · Actualizado ${hora}`, 'success');
+      if (!silencioso) toast(`✅ ${fmtN(state.rows.length)} registros · ${hora}`, 'success');
     } else {
-      if (!silencioso) toast('⚠️ Sin datos en la nube. Contacta al administrador.','info');
+      if (!silencioso) toast('⚠️ Sin datos. Sube el archivo Excel en el panel Administrador.','info');
     }
 
     // ── Verificación silenciosa: Google Sheets puede tener datos más recientes ──
@@ -1051,19 +968,15 @@ const APP = (() => {
 
   // ── Auto-refresco cada 30 min + al volver a la pestaña ──────
   function iniciarAutoRefresh() {
-    // Intervalo periódico de 30 minutos
     setInterval(async () => {
-      console.log('[AutoRefresh] Refrescando datos desde Supabase...');
-      await loadSaved(true); // silencioso
-      render(); // repintar la pestaña activa con datos nuevos
+      await loadSaved(true);
+      render();
     }, REFRESH_MS);
 
-    // Al volver a la pestaña del navegador después de más de 5 min ausente
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
-        const ausente = Date.now() - _lastSupaLoad;
-        if (ausente > 5 * 60 * 1000) { // más de 5 minutos
-          console.log(`[AutoRefresh] Volvió a la pestaña tras ${Math.round(ausente/60000)} min — recargando...`);
+        const ausente = Date.now() - _lastLoad;
+        if (ausente > 5 * 60 * 1000) {
           await loadSaved(true);
           render();
         }
@@ -3159,10 +3072,6 @@ const APP = (() => {
                 onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
               <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar':'📂 Cargar'}</span>
             </label>
-            <button onclick="APP.subirSupabase('${src.key}')"
-              style="padding:5px 12px;background:${loaded?'#8e44ad':'#bbb'};color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:${loaded?'pointer':'default'};opacity:${loaded?'1':'0.55'}">
-              ☁️ Subir a Supabase
-            </button>
             ${loaded && src.key !== 'detallado'
               ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
               : ''}
@@ -3329,22 +3238,28 @@ const APP = (() => {
           </p>
           ${!gTok ? `
           <div style="background:#fff8c5;border:1px solid #f0c000;border-radius:8px;padding:10px;font-size:11px;color:#555;margin-bottom:10px">
-            <b>📋 Configuración rápida (5 minutos):</b><br>
+            <b>📋 Configuración rápida:</b><br>
             1. Ve a <b>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)</b><br>
             2. Clic en <b>Generate new token</b> → marca solo el checkbox <b>gist</b><br>
-            3. Copia el token generado (empieza con <code>ghp_</code>)<br>
-            4. Pégalo abajo y haz clic en Guardar<br>
-            5. Sube el Excel → se comparte automáticamente con todos los compañeros
-          </div>
+            3. Copia el token y pégalo aquí abajo
+          </div>` : ''}
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-            <input id="gist-token-input" type="password" placeholder="ghp_... o github_pat_..."
-              style="flex:1;min-width:250px;padding:8px 12px;border:1.5px solid #24292e;border-radius:8px;font-size:12px;outline:none">
+            <input id="gist-token-input" type="text" placeholder="${gTok ? 'Pega aquí el nuevo token para reemplazar...' : 'ghp_...'}"
+              autocomplete="off" spellcheck="false"
+              style="flex:1;min-width:250px;padding:8px 12px;border:1.5px solid #24292e;border-radius:8px;font-size:12px;outline:none;font-family:monospace">
             <button onclick="APP.gistConfigSave()"
               style="padding:8px 18px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-              💾 Guardar token
+              💾 ${gTok ? 'Reemplazar token' : 'Guardar token'}
             </button>
-          </div>` : ''}
+          </div>
           ${gTok ? `
+          <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button onclick="APP.gistVerificarToken()"
+              style="padding:7px 16px;background:#0366d6;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
+              🔍 Verificar token y permisos
+            </button>
+            <span id="gist-verify-status" style="font-size:11px;color:#888"></span>
+          </div>
           <div style="margin-bottom:10px">
             <button onclick="APP.gistSubirAhora()"
               style="padding:10px 22px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
@@ -3368,37 +3283,11 @@ const APP = (() => {
         </div>`;
       })()}
 
-      <!-- ── FIREBASE ── -->
-      ${(() => {
-        const fbCfg = window.FB_STORE_API ? window.FB_STORE_API.getConfig() : {};
-        const fbOk  = !!fbCfg.bucket;
-        return `<div class="upload-section" style="border:2px solid #f57c00;background:linear-gradient(135deg,#fff8e1,#fff);margin-bottom:20px">
-          <h3 style="color:#e65100;margin:0 0 6px">🔥 Firebase Storage — Compartido entre usuarios</h3>
-          <p style="font-size:12px;color:#666;margin:0 0 12px">
-            ${fbOk
-              ? `✅ Conectado · Bucket: <code style="background:#fff3e0;padding:1px 6px;border-radius:4px">${fbCfg.bucket}</code>`
-              : 'Sin configurar. Pega el bucket de tu proyecto Firebase para activar el almacenamiento compartido.'}
-          </p>
-          ${!fbOk ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-            <input id="fb-bucket-input" type="text" placeholder="proyecto-xxxxx.appspot.com"
-              style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid #ffcc80;border-radius:8px;font-size:12px;outline:none">
-            <button onclick="APP.firebaseConfigSave()"
-              style="padding:8px 18px;background:#f57c00;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-              💾 Guardar y conectar
-            </button>
-          </div>` : `<button onclick="APP.firebaseConfigClear()"
-            style="padding:6px 14px;background:#fff;border:1.5px solid #f57c00;color:#e65100;border-radius:8px;font-size:12px;cursor:pointer">
-            🔌 Desconectar Firebase
-          </button>`}
-          <div id="fb-status" style="font-size:11px;color:#999;margin-top:6px"></div>
-        </div>`;
-      })()}
-
       <!-- ── INDEXEDDB ── -->
       <div class="upload-section" style="border:2px solid #546e7a;background:linear-gradient(135deg,#eceff1,#fff);margin-bottom:20px">
         <h3 style="color:#37474f;margin:0 0 6px">💾 Almacenamiento Local — IndexedDB</h3>
         <p style="font-size:12px;color:#666;margin:0 0 12px">
-          Respaldo sin límite en el navegador. Se restaura automáticamente cuando Supabase no está disponible.
+          Caché local en el navegador. Permite cargar datos sin conexión cuando Gist o Google Sheets no están disponibles.
         </p>
         <div id="idb-status-panel" style="font-size:12px;color:#999">Consultando…</div>
         <button onclick="APP.idbRefresh()" style="margin-top:10px;padding:6px 16px;background:#546e7a;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
@@ -3454,10 +3343,6 @@ const APP = (() => {
             <input type="file" accept="${(src.key==='pyp'||src.key==='res202')?'.xlsx,.xls,.xlsm,.csv,.txt':'.xlsx,.xls,.xlsm,.csv'}" onchange="APP.handleUploadSource(this,'${src.key}')" style="display:none">
             <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
           </label>
-          <button onclick="APP.subirSupabase('${src.key}')"
-            style="padding:5px 12px;background:${loaded?'#8e44ad':'#bbb'};color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:${loaded?'pointer':'default'};opacity:${loaded?'1':'0.55'}">
-            ☁️ Subir a Supabase
-          </button>
           ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
         </div>
       </div>`;
@@ -4642,26 +4527,43 @@ const APP = (() => {
       if (st) st.textContent = '⏳ Subiendo…';
       toast('⬆️ Subiendo datos a GitHub Gist…', 'info');
       const slim = slimRows('detallado', state.rows);
-      const ok = await window.GIST_STORE_API.gistUpload('detallado', slim, {
+      const result = await window.GIST_STORE_API.gistUpload('detallado', slim, {
         fileName: state.fileNames?.detallado || 'DETALLADO',
         uploadedAt: state.uploadedAt?.detallado || new Date().toISOString(),
       });
-      if (ok) {
+      if (result?.ok) {
         const newCfg = window.GIST_STORE_API.gistGetConfig();
         if (st) st.textContent = `✅ ${fmtN(state.rows.length)} registros · ${new Date().toLocaleTimeString('es-CO')}`;
-        // Marcar la fuente como Gist para que el banner del dashboard lo refleje
         state.fileNames.detallado = `GitHub Gist (${newCfg.gistId?.slice(0,8) || ''})`;
         toast(`✅ ${fmtN(state.rows.length)} registros subidos a GitHub Gist`, 'success');
-        // Ir al dashboard para mostrar el banner "Compartido con todos"
         setTimeout(() => {
           navigate('dashboard');
-          // Toast con instrucción para compañeros
           setTimeout(() => toast('👥 Los compañeros verán los datos nuevos automáticamente al abrir la app — sin hacer nada', 'info'), 800);
         }, 600);
       } else {
-        if (st) st.textContent = '❌ Error al subir — verifica el token';
-        toast('❌ No se pudo subir a GitHub Gist. Verifica el token.', 'error');
+        const errMsg = result?.errorMsg || 'Error desconocido';
+        if (st) st.textContent = `❌ ${errMsg}`;
+        toast(`❌ No se pudo subir a GitHub Gist: ${errMsg}`, 'error');
       }
+    },
+
+    gistVerificarToken: async () => {
+      if (!window.GIST_STORE_API) return;
+      const st = document.getElementById('gist-verify-status');
+      if (st) st.textContent = '⏳ Verificando…';
+      const r = await window.GIST_STORE_API.gistVerifyToken();
+      if (!r.valid) {
+        if (st) { st.style.color = '#c0392b'; st.textContent = `❌ ${r.msg}`; }
+        toast(`❌ Token inválido: ${r.msg}`, 'error');
+        return;
+      }
+      if (!r.hasGist) {
+        if (st) { st.style.color = '#e67e22'; st.textContent = `⚠️ Usuario: ${r.login} — falta el permiso "gist". Scopes actuales: ${r.scopes || 'ninguno'}`; }
+        toast(`⚠️ El token de @${r.login} no tiene el scope "gist" — genera uno nuevo marcando ese permiso`, 'error');
+        return;
+      }
+      if (st) { st.style.color = '#27ae60'; st.textContent = `✅ Token válido · Usuario: ${r.login} · Scopes: ${r.scopes}`; }
+      toast(`✅ Token OK — usuario: @${r.login}, tiene permiso gist`, 'success');
     },
 
     guardarGScriptUrl: () => {

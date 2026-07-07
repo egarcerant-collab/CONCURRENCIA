@@ -57,8 +57,10 @@
 
       if (!res.ok) {
         const err = await res.text();
-        console.warn('[Gist] Upload error', res.status, err.slice(0, 200));
-        return false;
+        let errMsg = `HTTP ${res.status}`;
+        try { const j = JSON.parse(err); if (j.message) errMsg = `HTTP ${res.status}: ${j.message}`; } catch(e2) {}
+        console.warn('[Gist] Upload error', res.status, err.slice(0, 300));
+        return { ok: false, status: res.status, errorMsg: errMsg };
       }
 
       gist = await res.json();
@@ -68,10 +70,31 @@
         console.info('[Gist] Nuevo gist creado:', CFG.gistId);
       }
       console.info(`[Gist] ✅ ${key} subido — ${rows.length} filas · ${sizeMB} MB`);
-      return true;
+      return { ok: true };
     } catch (e) {
       console.warn('[Gist] Exception:', e.message);
-      return false;
+      return { ok: false, status: 0, errorMsg: e.message };
+    }
+  }
+
+  // ── Verificar que el token es válido y tiene scope "gist" ────
+  async function gistVerifyToken() {
+    if (!CFG.token) return { valid: false, msg: 'Sin token configurado' };
+    try {
+      const res = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${CFG.token}`,
+          'Accept': 'application/vnd.github+json',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return { valid: false, msg: `HTTP ${res.status} — token inválido o expirado`, status: res.status };
+      const scopes = res.headers.get('x-oauth-scopes') || '';
+      const user = await res.json();
+      const hasGist = scopes.split(',').map(s => s.trim()).includes('gist');
+      return { valid: true, login: user.login, scopes, hasGist };
+    } catch (e) {
+      return { valid: false, msg: e.message };
     }
   }
 
@@ -113,5 +136,5 @@
   function gistIsReady() { return !!CFG.gistId; } // listo para descarga sin token
 
   _load();
-  window.GIST_STORE_API = { gistUpload, gistDownload, gistSetConfig, gistGetConfig, gistIsReady };
+  window.GIST_STORE_API = { gistUpload, gistDownload, gistSetConfig, gistGetConfig, gistIsReady, gistVerifyToken };
 })();
