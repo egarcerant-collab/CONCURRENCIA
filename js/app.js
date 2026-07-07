@@ -1108,22 +1108,39 @@ const APP = (() => {
 
     el.innerHTML = `
       ${filterBar()}
-      <!-- Banner estado sincronización (solo informativo) -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 16px;border-radius:10px;flex-wrap:wrap;${state.tipoReporte===1?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
-        <span style="font-size:18px">${state.tipoReporte===1?'☁️✅':'☁️⚠️'}</span>
-        <div style="flex:1;min-width:200px">
-          <div style="font-weight:700;font-size:13px;color:${state.tipoReporte===1?'#2e7d32':'#e65100'}">
-            ${state.tipoReporte===1
-              ? `Base de datos sincronizada — ${fmtN(state.rows.length)} registros`
-              : `Sincronización parcial — ${fmtN(state.rows.length)} registros`}
+      <!-- Banner estado sincronización -->
+      ${(() => {
+        const fn = state.fileNames?.detallado || '';
+        const fromGist   = fn.includes('Gist') || fn.includes('gist');
+        const fromSheets = fn.includes('Sheets') || fn.includes('Google');
+        const sincOk = state.tipoReporte === 1 || fromGist || fromSheets;
+        const gistCfg = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
+        const gistId  = gistCfg.gistId || '';
+        const fuente  = fromGist ? '🐙 GitHub Gist' : fromSheets ? '📊 Google Sheets' : '☁️ Supabase';
+        return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 16px;border-radius:10px;flex-wrap:wrap;${sincOk?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
+          <span style="font-size:18px">${sincOk?'✅':'⚠️'}</span>
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700;font-size:13px;color:${sincOk?'#2e7d32':'#e65100'}">
+              ${sincOk
+                ? `Base de datos sincronizada — ${fmtN(state.rows.length)} registros · ${fuente}`
+                : `Sincronización parcial — ${fmtN(state.rows.length)} registros`}
+            </div>
+            <div style="font-size:11px;color:#666;margin-top:2px">
+              ${state.uploadedAt.detallado
+                ? `🕐 Actualización: <b>${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b>`
+                : ''}
+              ${gistId ? ` · <a href="https://gist.github.com/${gistId}" target="_blank" style="color:#1a4f7a;font-size:11px">Ver Gist compartido</a>` : ''}
+            </div>
           </div>
-          <div style="font-size:11px;color:#666;margin-top:2px">
-            ${state.uploadedAt.detallado
-              ? `🕐 Última actualización: <b>${new Date(state.uploadedAt.detallado).toLocaleString('es-CO',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</b> · Sincronización automática diaria`
-              : 'Sincronización automática diaria desde el sistema hospitalario'}
-          </div>
-        </div>
-      </div>
+          ${gistId ? `<button onclick="APP.gistSubirAhora()" title="Subir versión actual a Gist"
+            style="padding:6px 14px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
+            ⬆️ Compartir con todos
+          </button>` : `<button onclick="APP.navigate('admin')"
+            style="padding:6px 14px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:11px;cursor:pointer;white-space:nowrap">
+            🐙 Configurar Gist
+          </button>`}
+        </div>`;
+      })()}
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
         ${periodoInfo ? `<div style="padding:7px 14px;background:#e8f5e9;border-radius:8px;font-size:12px;color:#2e7d32;border:1px solid #a5d6a7">${periodoInfo}</div>` : ''}
         ${state.fileNames.detallado ? `<div style="padding:7px 14px;background:#f3f4f6;border-radius:8px;font-size:12px;color:#555">📄 <b>${state.fileNames.detallado}</b></div>` : ''}
@@ -4631,10 +4648,16 @@ const APP = (() => {
       });
       if (ok) {
         const newCfg = window.GIST_STORE_API.gistGetConfig();
-        const url = `https://gist.github.com/${newCfg.gistId}`;
-        if (st) st.textContent = `✅ ${fmtN(state.rows.length)} registros subidos · ${new Date().toLocaleTimeString('es-CO')}`;
-        toast(`✅ ${fmtN(state.rows.length)} registros en GitHub Gist — todos los compañeros verán los datos al abrir la app`, 'success');
-        admin(); // re-render para mostrar el link al Gist
+        if (st) st.textContent = `✅ ${fmtN(state.rows.length)} registros · ${new Date().toLocaleTimeString('es-CO')}`;
+        // Marcar la fuente como Gist para que el banner del dashboard lo refleje
+        state.fileNames.detallado = `GitHub Gist (${newCfg.gistId?.slice(0,8) || ''})`;
+        toast(`✅ ${fmtN(state.rows.length)} registros subidos a GitHub Gist`, 'success');
+        // Ir al dashboard para mostrar el banner "Compartido con todos"
+        setTimeout(() => {
+          navigate('dashboard');
+          // Toast con instrucción para compañeros
+          setTimeout(() => toast('👥 Los compañeros verán los datos nuevos automáticamente al abrir la app — sin hacer nada', 'info'), 800);
+        }, 600);
       } else {
         if (st) st.textContent = '❌ Error al subir — verifica el token';
         toast('❌ No se pudo subir a GitHub Gist. Verifica el token.', 'error');
