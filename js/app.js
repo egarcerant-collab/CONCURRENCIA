@@ -755,6 +755,25 @@ const APP = (() => {
               .then(() => toast('✅ Google Sheets actualizado — todos los compañeros verán los datos nuevos', 'success'));
           }
         }
+        // GitHub Gist: almacenamiento compartido principal (sin egress, sin cuenta corporativa)
+        if (sourceKey === 'detallado' && window.GIST_STORE_API?.gistUpload) {
+          const gCfg = window.GIST_STORE_API.gistGetConfig();
+          if (gCfg.token) {
+            toast('⬆️ Subiendo a GitHub Gist…', 'info');
+            const slimForGist = slimRows(sourceKey, rows);
+            window.GIST_STORE_API.gistUpload('detallado', slimForGist, { fileName: file.name, uploadedAt: new Date().toISOString() })
+              .then(ok => {
+                if (ok) {
+                  // Guardar gistId para que los compañeros puedan descargarlo
+                  const cfg = window.GIST_STORE_API.gistGetConfig();
+                  try { localStorage.setItem('gist_cfg', JSON.stringify(cfg)); } catch(e) {}
+                  toast('✅ Datos subidos a GitHub Gist — comparte el Gist ID con tus compañeros', 'success');
+                } else {
+                  toast('⚠️ Gist: no se pudo subir. Verifica el token.', 'info');
+                }
+              });
+          }
+        }
         updateStatusBar();
         // render() re-pinta el tab activo (admin o datos) para mostrar el nuevo estado
         if (sourceKey === 'detallado') navigate('dashboard'); else render();
@@ -874,7 +893,19 @@ const APP = (() => {
         } catch(e) {}
       }
 
-      // 4. Firebase Storage — respaldo compartido (todos los usuarios, sin cuota egress)
+      // 4. GitHub Gist — almacenamiento compartido principal sin egress
+      if ((!d || !d.rows || !d.rows.length) && window.GIST_STORE_API?.gistIsReady()) {
+        try {
+          const gd = await window.GIST_STORE_API.gistDownload(key);
+          if (gd?.rows?.length) {
+            d = { rows: gd.rows, fileName: gd.fileName, uploadedAt: gd.uploadedAt };
+            console.info(`[Gist] ${key}: ${d.rows.length} filas restauradas`);
+            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt });
+          }
+        } catch(e) { console.warn('[Gist] Download error:', e.message); }
+      }
+
+      // 5. Firebase Storage — respaldo compartido (todos los usuarios, sin cuota egress)
       if (!d || !d.rows || !d.rows.length) {
         if (window.FB_STORE_API && window.FB_STORE_API.getConfig().bucket) {
           try {
@@ -888,7 +919,7 @@ const APP = (() => {
         }
       }
 
-      // 5. IndexedDB — cualquier versión (aunque sea vieja) si todo lo demás falló
+      // 6. IndexedDB — cualquier versión (aunque sea vieja) si todo lo demás falló
       if (!d || !d.rows || !d.rows.length) {
         if (window.IDB_STORE_API) {
           try {
@@ -901,7 +932,7 @@ const APP = (() => {
         }
       }
 
-      // 6. localStorage — último recurso (solo para DATOS, límite 5 MB)
+      // 7. localStorage — último recurso (solo para DATOS, límite 5 MB)
       if (!d || !d.rows || !d.rows.length) {
         try {
           const raw = localStorage.getItem(LS_PREFIX + table);
@@ -993,6 +1024,28 @@ const APP = (() => {
           }
         } catch(e) { console.warn('[GSheets background] error:', e.message); }
       }, 3000); // 3 s después del load inicial para no bloquear el render
+    }
+
+    // ── Verificación silenciosa: GitHub Gist puede tener datos más recientes ──
+    if (!forzarNube && window.GIST_STORE_API?.gistIsReady()) {
+      setTimeout(async () => {
+        try {
+          const gd = await window.GIST_STORE_API.gistDownload('detallado');
+          if (gd?.rows?.length > state.rows.length) {
+            console.info(`[Gist] Datos más recientes: ${gd.rows.length} vs ${state.rows.length} filas`);
+            state.rows = gd.rows;
+            state.fileNames.detallado = gd.fileName || 'GitHub Gist';
+            state.uploadedAt.detallado = gd.uploadedAt;
+            state.meta = window.CALCS ? window.CALCS.extractMeta(gd.rows) : state.meta;
+            if (window.IDB_STORE_API) {
+              window.IDB_STORE_API.idbSave('detallado', gd.rows, { fileName: gd.fileName, uploadedAt: gd.uploadedAt });
+            }
+            render();
+            updateStatusBar();
+            toast(`✅ Datos actualizados desde GitHub Gist: ${fmtN(gd.rows.length)} registros`, 'success');
+          }
+        } catch(e) { console.warn('[Gist background] error:', e.message); }
+      }, 5000); // 5 s para no coincidir con el check de GSheets
     }
   }
 
@@ -3243,6 +3296,53 @@ const APP = (() => {
         </div>
       </div>
 
+      <!-- ── GITHUB GIST (almacenamiento compartido principal) ── -->
+      ${(() => {
+        const gCfg  = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
+        const gOk   = !!gCfg.gistId;
+        const gTok  = !!gCfg.token;
+        return `<div class="upload-section" style="border:2px solid #24292e;background:linear-gradient(135deg,#f6f8fa,#fff);margin-bottom:20px">
+          <h3 style="color:#24292e;margin:0 0 6px">🐙 GitHub Gist — Sincronización para todos</h3>
+          <p style="font-size:12px;color:#555;margin:0 0 10px">
+            ${gTok && gOk
+              ? `✅ Configurado · Gist ID: <code style="background:#f1f3f5;padding:1px 6px;border-radius:4px">${gCfg.gistId}</code><br>Al subir un Excel se sincroniza automáticamente. Los compañeros verán los datos nuevos al abrir la app.`
+              : gTok
+              ? '✅ Token configurado. Sube un Excel para crear el Gist compartido automáticamente.'
+              : 'Sin configurar. Crea un <b>Personal Access Token</b> en GitHub con permiso <code>gist</code> y pégalo aquí.'}
+          </p>
+          ${!gTok ? `
+          <div style="background:#fff8c5;border:1px solid #f0c000;border-radius:8px;padding:10px;font-size:11px;color:#555;margin-bottom:10px">
+            <b>📋 Configuración rápida (5 minutos):</b><br>
+            1. Ve a <b>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)</b><br>
+            2. Clic en <b>Generate new token</b> → marca solo el checkbox <b>gist</b><br>
+            3. Copia el token generado (empieza con <code>ghp_</code>)<br>
+            4. Pégalo abajo y haz clic en Guardar<br>
+            5. Sube el Excel → se comparte automáticamente con todos los compañeros
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <input id="gist-token-input" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              style="flex:1;min-width:250px;padding:8px 12px;border:1.5px solid #24292e;border-radius:8px;font-size:12px;outline:none">
+            <button onclick="APP.gistConfigSave()"
+              style="padding:8px 18px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              💾 Guardar token
+            </button>
+          </div>` : ''}
+          ${gOk ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <a href="https://gist.github.com/${gCfg.gistId}" target="_blank" rel="noopener"
+              style="padding:6px 14px;background:#24292e;color:#fff;border-radius:8px;font-size:12px;text-decoration:none">
+              🔗 Ver Gist en GitHub
+            </a>
+            <button onclick="APP.gistConfigClear()"
+              style="padding:6px 14px;background:#fff;border:1.5px solid #24292e;color:#24292e;border-radius:8px;font-size:12px;cursor:pointer">
+              🔌 Desconectar
+            </button>
+          </div>` : ''}
+          ${gTok && !gOk ? `<p style="font-size:11px;color:#888;margin:0">Sube un archivo Excel para crear el Gist compartido automáticamente.</p>` : ''}
+          <div id="gist-status" style="font-size:11px;color:#888;margin-top:6px"></div>
+        </div>`;
+      })()}
+
       <!-- ── FIREBASE ── -->
       ${(() => {
         const fbCfg = window.FB_STORE_API ? window.FB_STORE_API.getConfig() : {};
@@ -4485,6 +4585,26 @@ const APP = (() => {
       window.FB_STORE_API.fbSetConfig({ bucket: '', apiKey: '' });
       try { localStorage.removeItem('fb_cfg'); } catch(e) {}
       toast('🔌 Firebase desconectado','info');
+      admin();
+    },
+
+    gistConfigSave: () => {
+      const input = document.getElementById('gist-token-input');
+      const token = (input?.value || '').trim();
+      if (!token || !token.startsWith('ghp_')) {
+        toast('⚠️ Token inválido. Debe empezar con ghp_', 'info');
+        return;
+      }
+      if (!window.GIST_STORE_API) { toast('❌ Gist Store no disponible', 'error'); return; }
+      window.GIST_STORE_API.gistSetConfig({ token });
+      toast('✅ Token de GitHub guardado. Al subir el próximo Excel se creará el Gist compartido.', 'success');
+      admin(); // re-render para mostrar estado actualizado
+    },
+
+    gistConfigClear: () => {
+      if (!window.GIST_STORE_API) return;
+      window.GIST_STORE_API.gistSetConfig({ token: '', gistId: '' });
+      toast('🔌 GitHub Gist desconectado', 'info');
       admin();
     },
 
