@@ -3327,6 +3327,14 @@ const APP = (() => {
               💾 Guardar token
             </button>
           </div>` : ''}
+          ${gTok ? `
+          <div style="margin-bottom:10px">
+            <button onclick="APP.gistSubirAhora()"
+              style="padding:10px 22px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+              ⬆️ Subir datos a GitHub Gist ahora
+            </button>
+            <span id="gist-upload-status" style="font-size:11px;color:#888;margin-left:10px"></span>
+          </div>` : ''}
           ${gOk ? `
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
             <a href="https://gist.github.com/${gCfg.gistId}" target="_blank" rel="noopener"
@@ -3338,7 +3346,7 @@ const APP = (() => {
               🔌 Desconectar
             </button>
           </div>` : ''}
-          ${gTok && !gOk ? `<p style="font-size:11px;color:#888;margin:0">Sube un archivo Excel para crear el Gist compartido automáticamente.</p>` : ''}
+          ${gTok && !gOk ? `<p style="font-size:11px;color:#888;margin:0">Sube un archivo Excel o usa el botón de arriba para crear el Gist compartido.</p>` : ''}
           <div id="gist-status" style="font-size:11px;color:#888;margin-top:6px"></div>
         </div>`;
       })()}
@@ -4606,6 +4614,31 @@ const APP = (() => {
       window.GIST_STORE_API.gistSetConfig({ token: '', gistId: '' });
       toast('🔌 GitHub Gist desconectado', 'info');
       admin();
+    },
+
+    gistSubirAhora: async () => {
+      if (!window.GIST_STORE_API) { toast('❌ Gist Store no disponible', 'error'); return; }
+      if (!state.rows.length) { toast('⚠️ No hay datos cargados para subir', 'info'); return; }
+      const cfg = window.GIST_STORE_API.gistGetConfig();
+      if (!cfg.token) { toast('⚠️ Configura primero el token de GitHub', 'info'); return; }
+      const st = document.getElementById('gist-upload-status');
+      if (st) st.textContent = '⏳ Subiendo…';
+      toast('⬆️ Subiendo datos a GitHub Gist…', 'info');
+      const slim = slimRows('detallado', state.rows);
+      const ok = await window.GIST_STORE_API.gistUpload('detallado', slim, {
+        fileName: state.fileNames?.detallado || 'DETALLADO',
+        uploadedAt: state.uploadedAt?.detallado || new Date().toISOString(),
+      });
+      if (ok) {
+        const newCfg = window.GIST_STORE_API.gistGetConfig();
+        const url = `https://gist.github.com/${newCfg.gistId}`;
+        if (st) st.textContent = `✅ ${fmtN(state.rows.length)} registros subidos · ${new Date().toLocaleTimeString('es-CO')}`;
+        toast(`✅ ${fmtN(state.rows.length)} registros en GitHub Gist — todos los compañeros verán los datos al abrir la app`, 'success');
+        admin(); // re-render para mostrar el link al Gist
+      } else {
+        if (st) st.textContent = '❌ Error al subir — verifica el token';
+        toast('❌ No se pudo subir a GitHub Gist. Verifica el token.', 'error');
+      }
     },
 
     guardarGScriptUrl: () => {
