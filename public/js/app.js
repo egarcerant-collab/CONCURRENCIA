@@ -3320,7 +3320,7 @@ const APP = (() => {
             5. Sube el Excel → se comparte automáticamente con todos los compañeros
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-            <input id="gist-token-input" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+            <input id="gist-token-input" type="password" placeholder="ghp_... o github_pat_..."
               style="flex:1;min-width:250px;padding:8px 12px;border:1.5px solid #24292e;border-radius:8px;font-size:12px;outline:none">
             <button onclick="APP.gistConfigSave()"
               style="padding:8px 18px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
@@ -4591,8 +4591,8 @@ const APP = (() => {
     gistConfigSave: () => {
       const input = document.getElementById('gist-token-input');
       const token = (input?.value || '').trim();
-      if (!token || !token.startsWith('ghp_')) {
-        toast('⚠️ Token inválido. Debe empezar con ghp_', 'info');
+      if (!token || (!token.startsWith('ghp_') && !token.startsWith('github_pat_'))) {
+        toast('⚠️ Token inválido. Debe empezar con ghp_ o github_pat_', 'info');
         return;
       }
       if (!window.GIST_STORE_API) { toast('❌ Gist Store no disponible', 'error'); return; }
