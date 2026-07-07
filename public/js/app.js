@@ -962,6 +962,29 @@ const APP = (() => {
     } else {
       if (!silencioso) toast('⚠️ Sin datos en la nube. Contacta al administrador.','info');
     }
+
+    // ── Verificación silenciosa: Google Sheets puede tener datos más recientes ──
+    // Si GSheets tiene MÁS filas que el IDB/Supabase actual → actualiza automáticamente
+    if (!forzarNube && window.SUPA_DB?.gSheetsDownload) {
+      setTimeout(async () => {
+        try {
+          const gs = await window.SUPA_DB.gSheetsDownload();
+          if (gs?.rows?.length > state.rows.length) {
+            console.info(`[GSheets] Datos más recientes: ${gs.rows.length} vs ${state.rows.length} filas actuales`);
+            state.rows = gs.rows;
+            state.fileNames.detallado = gs.fileName || 'Google Sheets';
+            state.uploadedAt.detallado = gs.uploadedAt;
+            state.meta = window.CALCS ? window.CALCS.extractMeta(gs.rows) : state.meta;
+            if (window.IDB_STORE_API) {
+              window.IDB_STORE_API.idbSave('detallado', gs.rows, { fileName: 'Google Sheets', uploadedAt: gs.uploadedAt });
+            }
+            render();
+            updateStatusBar();
+            toast(`✅ Datos actualizados desde Google Sheets: ${fmtN(gs.rows.length)} registros`, 'success');
+          }
+        } catch(e) { console.warn('[GSheets background] error:', e.message); }
+      }, 3000); // 3 s después del load inicial para no bloquear el render
+    }
   }
 
   // ── Auto-refresco cada 30 min + al volver a la pestaña ──────
@@ -3108,7 +3131,11 @@ const APP = (() => {
             style="padding:9px 20px;background:#8e44ad;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
             🔄 Recargar desde Supabase
           </button>
-          <span style="font-size:11px;color:#888">Restaura los datos ya guardados en la nube</span>
+          <button onclick="APP.recargarGSheets()"
+            style="padding:9px 20px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+            📊 Recargar desde Google Sheets
+          </button>
+          <span style="font-size:11px;color:#888">Si actualizaste la hoja de cálculo, usa este botón</span>
         </div>
 
         <!-- ── COMPARTIR DATOS CON COMPAÑEROS ── -->
@@ -3405,6 +3432,27 @@ const APP = (() => {
       iniciarAutoRefresh(); // ← refresco cada 30 min + al volver a la pestaña
     },
     navigate, render,
+    recargarGSheets: async () => {
+      if (!window.SUPA_DB?.gSheetsDownload) { toast('❌ Google Sheets no disponible','error'); return; }
+      toast('📊 Consultando Google Sheets...','info');
+      try {
+        const gs = await window.SUPA_DB.gSheetsDownload();
+        if (!gs?.rows?.length) { toast('⚠️ Google Sheets no devolvió datos. ¿Está publicada la hoja?','info'); return; }
+        state.rows = gs.rows;
+        state.fileNames.detallado = gs.fileName || 'Google Sheets';
+        state.uploadedAt.detallado = gs.uploadedAt;
+        state.meta = window.CALCS ? window.CALCS.extractMeta(gs.rows) : state.meta;
+        if (window.IDB_STORE_API) {
+          await window.IDB_STORE_API.idbSave('detallado', gs.rows, { fileName: 'Google Sheets', uploadedAt: gs.uploadedAt });
+        }
+        render();
+        navigate('dashboard');
+        toast(`✅ ${fmtN(gs.rows.length)} registros cargados desde Google Sheets`, 'success');
+      } catch(e) {
+        toast('❌ Error al cargar Google Sheets: ' + e.message,'error');
+      }
+    },
+
     // Recargar datos desde Supabase manualmente (para cuando el auto-load no funciona)
     recargarNube: async () => {
       toast('☁️ Recargando desde Supabase (ignorando caché)...','info');
