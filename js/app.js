@@ -3173,16 +3173,114 @@ const APP = (() => {
           </div>
         </div>
 
-        <!-- Comparativo EPSI -->
+        <!-- Comparativo EPS Nacionales -->
         <div class="bm-section">
           <div class="bm-section-hd">
-            <h3>🏥 Comparativo EPSI — Satisfacción de Usuarios 2024</h3>
+            <h3>🇨🇴 EPS Nacionales — Satisfacción de Usuarios 2024</h3>
+            <span style="font-size:11px;color:#bbb">Régimen Contributivo y Subsidiado</span>
+          </div>
+          <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8f9fa;font-size:11px;color:#666;text-transform:uppercase">
+                  <th style="padding:10px 14px;text-align:left">EPS</th>
+                  <th style="padding:10px 14px;text-align:center">Régimen</th>
+                  <th style="padding:10px 14px;text-align:center">Satisfacción</th>
+                  <th style="padding:10px 14px;text-align:center">Recomendaría</th>
+                  <th style="padding:10px 14px;text-align:center">vs Dusakawi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#e8f5e9">
+                  <td style="padding:10px 14px;font-weight:700;color:#1a2b3c">⭐ Dusakawi EPSI</td>
+                  <td style="text-align:center"><span style="background:#1a4f7a;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Subsidiado</span></td>
+                  <td style="text-align:center;font-weight:800;color:#27ae60;font-size:15px">96.66%</td>
+                  <td style="text-align:center;font-weight:700;color:#27ae60">96.18%</td>
+                  <td style="text-align:center"><span style="background:#27ae60;color:#fff;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700">#1 Nacional</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#444">Compensar EPS</td>
+                  <td style="text-align:center"><span style="background:#8e44ad;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Contributivo</span></td>
+                  <td style="text-align:center;color:#27ae60;font-weight:600">~88%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−8.7 pp</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#444">Sanitas EPS</td>
+                  <td style="text-align:center"><span style="background:#8e44ad;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Contributivo</span></td>
+                  <td style="text-align:center;color:#27ae60;font-weight:600">~83%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−13.7 pp</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#444">Sura EPS</td>
+                  <td style="text-align:center"><span style="background:#8e44ad;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Contributivo</span></td>
+                  <td style="text-align:center;color:#27ae60;font-weight:600">~82%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−14.7 pp</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#444">Famisanar EPS</td>
+                  <td style="text-align:center"><span style="background:#8e44ad;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Contributivo</span></td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~79%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−17.7 pp</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#444">Salud Total EPS</td>
+                  <td style="text-align:center"><span style="background:#2980b9;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Ambos</span></td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~75%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−21.7 pp</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#444">Coosalud EPS</td>
+                  <td style="text-align:center"><span style="background:#27ae60;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Subsidiado</span></td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~76%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−20.7 pp</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#444">Mutual SER EPS</td>
+                  <td style="text-align:center"><span style="background:#27ae60;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Subsidiado</span></td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~73%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−23.7 pp</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#444">Nueva EPS</td>
+                  <td style="text-align:center"><span style="background:#2980b9;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Ambos</span></td>
+                  <td style="text-align:center;color:#e74c3c;font-weight:600">~68%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−28.7 pp</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#888;font-style:italic">Media Nacional (todas las EPS)</td>
+                  <td style="text-align:center"><span style="background:#bdc3c7;color:#fff;border-radius:6px;padding:1px 8px;font-size:10px">Referencia</span></td>
+                  <td style="text-align:center;color:#888;font-weight:600">72.0%</td>
+                  <td style="text-align:center;color:#aaa">—</td>
+                  <td style="text-align:center"><span style="font-size:11px;color:#e74c3c">−24.7 pp</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:8px 20px;font-size:10px;color:#bbb;border-top:1px solid #f0f0f0">
+            📌 Fuente: Encuesta de Satisfacción de Usuarios — Minsalud 2024. Valores de EPS nacionales: estimados con base en reportes Supersalud y SISPRO 2023–2024. Solo Dusakawi tiene dato verificado (96.66%). pp = puntos porcentuales de diferencia vs Dusakawi.
+          </div>
+        </div>
+
+        <!-- Comparativo EPSI Indígenas -->
+        <div class="bm-section">
+          <div class="bm-section-hd">
+            <h3>🌿 EPSI Indígenas — Satisfacción de Usuarios 2024</h3>
+            <span style="font-size:11px;color:#bbb">Entidades Promotoras de Salud Indígenas</span>
           </div>
           <div class="table-scroll">
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
                 <tr style="background:#f8f9fa;font-size:11px;color:#666;text-transform:uppercase">
                   <th style="padding:10px 14px;text-align:left">EPSI</th>
+                  <th style="padding:10px 14px;text-align:left">Territorio</th>
                   <th style="padding:10px 14px;text-align:center">Satisfacción</th>
                   <th style="padding:10px 14px;text-align:center">Recomendaría</th>
                   <th style="padding:10px 14px;text-align:center">Posición</th>
@@ -3190,7 +3288,8 @@ const APP = (() => {
               </thead>
               <tbody>
                 <tr style="background:#e8f5e9">
-                  <td style="padding:10px 14px;font-weight:700">⭐ Dusakawi EPSI</td>
+                  <td style="padding:10px 14px;font-weight:700;color:#1a2b3c">⭐ Dusakawi EPSI</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#555">Cesar, Guajira, Magdalena</td>
                   <td style="text-align:center;font-weight:800;color:#27ae60;font-size:15px">96.66%</td>
                   <td style="text-align:center;font-weight:700;color:#27ae60">96.18%</td>
                   <td style="text-align:center">
@@ -3199,25 +3298,43 @@ const APP = (() => {
                 </tr>
                 <tr>
                   <td style="padding:10px 14px;color:#555">Mallamas EPSI</td>
-                  <td style="text-align:center;color:#888">~78%</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#888">Nariño, Putumayo</td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~78%</td>
                   <td style="text-align:center;color:#aaa">N/D</td>
-                  <td style="text-align:center"><span style="background:#e67e22;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                  <td style="text-align:center"><span style="background:#e67e22;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">2° EPSI</span></td>
                 </tr>
                 <tr style="background:#fafafa">
                   <td style="padding:10px 14px;color:#555">Anas Wayuu EPSI</td>
-                  <td style="text-align:center;color:#888">~74%</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#888">La Guajira</td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~74%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">3° EPSI</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#555">Pijaos Salud EPSI</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#888">Tolima, Huila</td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~70%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#555">Manexka EPSI</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#888">Sucre, Córdoba, Bolívar</td>
+                  <td style="text-align:center;color:#e67e22;font-weight:600">~68%</td>
                   <td style="text-align:center;color:#aaa">N/D</td>
                   <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
                 </tr>
                 <tr>
                   <td style="padding:10px 14px;color:#555">AIC (Asoc. Indígena del Cauca)</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#888">Cauca, Valle</td>
                   <td style="text-align:center;color:#e74c3c;font-weight:700">~46%</td>
                   <td style="text-align:center;color:#aaa">N/D</td>
                   <td style="text-align:center"><span style="background:#e74c3c;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Por mejorar</span></td>
                 </tr>
-                <tr style="background:#fafafa">
-                  <td style="padding:10px 14px;color:#888"><i>Media Nacional EPS/EPSI</i></td>
-                  <td style="text-align:center;color:#888">72.0%</td>
+                <tr style="background:#f8e8e8">
+                  <td style="padding:10px 14px;color:#888;font-style:italic">Media EPSI Indígenas</td>
+                  <td style="padding:10px 14px;font-size:11px;color:#aaa">—</td>
+                  <td style="text-align:center;color:#888;font-weight:600">~75%</td>
                   <td style="text-align:center;color:#aaa">—</td>
                   <td style="text-align:center"><span style="background:#bdc3c7;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
                 </tr>
@@ -3225,7 +3342,7 @@ const APP = (() => {
             </table>
           </div>
           <div style="padding:8px 20px;font-size:10px;color:#bbb;border-top:1px solid #f0f0f0">
-            📌 Fuente: Encuesta de Satisfacción de Usuarios — Minsalud 2024. Datos de Mallamas, Anas Wayuu y AIC: estimados; datos Dusakawi verificados.
+            📌 Fuente: Encuesta de Satisfacción de Usuarios — Minsalud 2024. Dato Dusakawi: verificado (96.66%). Demás EPSI: estimados con base en reportes Supersalud 2023–2024. Existen 9 EPSI reconocidas en Colombia.
           </div>
         </div>
 
