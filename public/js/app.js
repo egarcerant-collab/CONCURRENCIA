@@ -3317,12 +3317,16 @@ const APP = (() => {
                   <td style="text-align:center;color:#aaa">N/D</td>
                   <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
                 </tr>
-                <tr style="background:#fafafa">
-                  <td style="padding:10px 14px;color:#555">Manexka EPSI</td>
-                  <td style="padding:10px 14px;font-size:11px;color:#888">Sucre, Córdoba, Bolívar</td>
-                  <td style="text-align:center;color:#e67e22;font-weight:600">~68%</td>
+                <tr style="background:#fafafa;opacity:.7">
+                  <td style="padding:10px 14px;color:#888">
+                    <span style="text-decoration:line-through">Manexka EPSI</span>
+                    <span style="margin-left:6px;background:#7f8c8d;color:#fff;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700">⚠️ LIQUIDADA</span>
+                    <br><span style="font-size:10px;color:#e74c3c">Proceso de liquidación — no opera desde 2023</span>
+                  </td>
+                  <td style="padding:10px 14px;font-size:11px;color:#aaa">Sucre, Córdoba, Bolívar</td>
+                  <td style="text-align:center;color:#aaa">—</td>
                   <td style="text-align:center;color:#aaa">N/D</td>
-                  <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                  <td style="text-align:center"><span style="background:#7f8c8d;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Liquidada</span></td>
                 </tr>
                 <tr>
                   <td style="padding:10px 14px;color:#555">AIC (Asoc. Indígena del Cauca)</td>
