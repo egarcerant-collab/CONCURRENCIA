@@ -348,6 +348,7 @@ const APP = (() => {
       estancia:'🛏️ Estancia Detallada',
       ubicacion:'📍 Usuarios Internados — Estancias Activas',
       rn:'👶 Cohorte Recién Nacido — Res. 117/2026',
+      benchmarks:'🎯 Benchmarks Nacionales — Dusakawi vs. Colombia',
       datos:'⚙️ Cargar Datos',
       admin:'🔐 Administrador — Sincronización de Datos'
     };
@@ -370,7 +371,7 @@ const APP = (() => {
     state.filters = _getTabFilters(tab);
     const m = { dashboard, hospitalizacion, uci, mortalidad, cesarea, desnutricion,
                 enfermedades, edaira, saludmental, rcv, riamp, glosas, concurrencias,
-                reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, datos, admin };
+                reingreso, eventos, aiu, cyd, estancia, ubicacion, rn, benchmarks, datos, admin };
     if (m[tab]) m[tab]();
   }
 
@@ -3010,6 +3011,237 @@ const APP = (() => {
     }, 50);
   }
 
+  // ── BENCHMARKS NACIONALES ────────────────────────────────
+  function benchmarks() {
+    const el = document.getElementById('tab-benchmarks');
+    const hasData = state.rows.length > 0;
+    const d = hasData ? CALCS.calcResumen(state.rows, state.filters) : {};
+
+    // Indicadores calculados de la base (null si no hay datos)
+    const dMort  = hasData && d.egresos  > 0 ? (d.fallecidos / d.egresos * 100) : null;
+    const dCes   = hasData && d.gestantes > 0 ? d.tasaCesarea  : null;
+    const dReing = hasData && d.egresos  > 0 ? d.tasaReingreso : null;
+    const dEst   = hasData && d.diasEstanciaPromedio > 0 ? d.diasEstanciaPromedio : null;
+    const dUCI   = hasData && d.total    > 0 ? (d.uciPac / d.total * 100) : null;
+
+    // Indicadores externos — encuesta Minsalud 2024 / Supersalud 2024
+    const SAT_DSK = 96.66;
+    const TUT_DSK = 0.11;
+
+    // Semáforo de color
+    function semC(val, ref, menor) {
+      if (val === null) return '#95a5a6';
+      return menor
+        ? (val <= ref ? '#27ae60' : val <= ref * 1.3 ? '#e67e22' : '#e74c3c')
+        : (val >= ref ? '#27ae60' : val >= ref * 0.8 ? '#e67e22' : '#e74c3c');
+    }
+    function semL(val, ref, menor) {
+      if (val === null) return '—';
+      return menor
+        ? (val <= ref ? '✅ Cumple' : val <= ref * 1.3 ? '⚠️ Atención' : '❌ Por mejorar')
+        : (val >= ref ? '✅ Cumple' : val >= ref * 0.8 ? '⚠️ Atención' : '❌ Por mejorar');
+    }
+
+    // Tarjeta KPI
+    function card(icon, label, val, nacional, meta, unidad, menor, fuente, nota) {
+      const ref = meta !== null ? Number(meta) : Number(nacional);
+      const col = semC(val, ref, menor);
+      const badge = semL(val, ref, menor);
+      const dsp = val !== null
+        ? `<span class="bm-card-value">${Number(val).toFixed(unidad===' días'?1:2)}${unidad}</span>`
+        : `<span class="bm-card-nd">Sin datos<br><span style="font-size:10px">carga base primero</span></span>`;
+      return `<div class="bm-card" style="border-top:4px solid ${col}">
+        <div class="bm-card-icon">${icon}</div>
+        <div class="bm-card-label">${label}</div>
+        ${dsp}
+        <div class="bm-card-refs">
+          <span>🇨🇴 Colombia: <b>${Number(nacional).toFixed(1)}${unidad}</b></span>
+          ${meta!==null?`<span>🎯 Meta: <b>${Number(meta).toFixed(1)}${unidad}</b></span>`:''}
+          ${nota?`<span style="font-size:10px;color:#aaa">${nota}</span>`:''}
+        </div>
+        <span class="bm-card-badge" style="background:${col}">${badge}</span>
+        <div class="bm-card-src">${fuente}</div>
+      </div>`;
+    }
+
+    // Fila de la tabla comparativa
+    function trow(label, val, nac, meta, unidad, fuente, menor, norma) {
+      const ref = meta !== null ? Number(meta) : Number(nac);
+      const col = semC(val, ref, menor);
+      const lbl = semL(val, ref, menor);
+      const dval = val !== null ? `<b style="color:${col}">${Number(val).toFixed(Number(val)>=10?1:2)}${unidad}</b>` : '<i style="color:#ccc">N/D</i>';
+      return `<tr style="border-bottom:1px solid #f4f4f4">
+        <td style="padding:9px 14px">
+          <span style="font-weight:600">${label}</span>
+          ${norma?`<br><span style="font-size:10px;color:#aaa">${norma}</span>`:''}
+        </td>
+        <td style="text-align:center;padding:9px 14px">${dval}</td>
+        <td style="text-align:center;padding:9px 14px;color:#666">${Number(nac).toFixed(1)}${unidad}</td>
+        <td style="text-align:center;padding:9px 14px;color:#888">${meta!==null?`${Number(meta).toFixed(1)}${unidad}`:'—'}</td>
+        <td style="padding:9px 14px;font-size:10px;color:#999">${fuente}</td>
+        <td style="text-align:center;padding:9px 14px">
+          <span style="background:${col};color:#fff;border-radius:8px;padding:2px 9px;font-size:11px;font-weight:700">${lbl}</span>
+        </td>
+      </tr>`;
+    }
+
+    const periodo = (() => {
+      const fm = state.meta?.fechaMax || '';
+      const m = fm.match(/(\d{4})[\/\-](\d{2})/);
+      if (!m) return 'período actual';
+      const mes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      return `${mes[parseInt(m[2])-1]} ${m[1]}`;
+    })();
+
+    el.innerHTML = `
+      <div id="benchmarks-report">
+
+        <!-- Encabezado -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+          <div>
+            <h2 style="font-size:17px;color:#1a2b3c;margin:0 0 4px">🎯 Benchmarks Nacionales — Dusakawi EPSI</h2>
+            <p style="font-size:12px;color:#aaa;margin:0">
+              Indicadores hospitalarios vs. promedios Colombia · ${fmtN(state.rows.length)} registros · ${periodo}
+            </p>
+          </div>
+          <button onclick="APP.exportBenchmarksPDF()" class="no-print"
+            style="padding:9px 18px;background:#1a4f7a;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">
+            📄 Exportar informe PDF
+          </button>
+        </div>
+
+        <!-- Alerta medida especial -->
+        <div class="bm-alert bm-alert-warn">
+          <span class="bm-alert-icon">⚠️</span>
+          <div>
+            <div class="bm-alert-title">Medida Especial Supersalud — Prórroga Vigente 2024–2025</div>
+            <div class="bm-alert-body">Dusakawi EPSI se encuentra bajo prórroga de medida especial (Superintendencia Nacional de Salud). El seguimiento a indicadores de calidad es prioritario para el levantamiento de la medida.</div>
+          </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="bm-grid">
+          ${card('😊','Satisfacción Usuarios', SAT_DSK, 72.0, null, '%', false,
+            'Encuesta Minsalud 2024', 'Ranking #1 nacional entre todas las EPS/EPSI')}
+          ${card('👶','Tasa de Cesáreas', dCes, 46.2, 15.0, '%', true,
+            'SISPRO 2023 · Meta OPS/OMS ≤15%', '% sobre gestantes de la base')}
+          ${card('⚕️','Mortalidad Intrahospitalaria', dMort, 2.8, 2.5, '%', true,
+            'Minsalud MSPS 2023', 'Por 100 egresos hospitalarios')}
+          ${card('🔁','Tasa de Reingreso', dReing, 10.2, 8.0, '%', true,
+            'Res. 0256/2016 P.2.13', 'Reingresos / total egresos')}
+          ${card('🛏️','Estancia Promedio', dEst, 5.4, 6.0, ' días', true,
+            'SISPRO 2023', 'Media de días de hospitalización')}
+          ${card('📋','Tutelas / 1.000 afiliados', TUT_DSK, 4.8, null, '', true,
+            'Supersalud 2024', 'Menor valor = mejor desempeño')}
+        </div>
+
+        <!-- Tabla comparativa -->
+        <div class="bm-section">
+          <div class="bm-section-hd">
+            <h3>📊 Tabla Comparativa de Indicadores</h3>
+            <span style="font-size:11px;color:#bbb">Fuentes: Minsalud · Supersalud · SISPRO · OPS</span>
+          </div>
+          <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8f9fa;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.3px">
+                  <th style="padding:10px 14px;text-align:left">Indicador</th>
+                  <th style="padding:10px 14px;text-align:center">Dusakawi</th>
+                  <th style="padding:10px 14px;text-align:center">Colombia</th>
+                  <th style="padding:10px 14px;text-align:center">Meta</th>
+                  <th style="padding:10px 14px;text-align:left">Fuente</th>
+                  <th style="padding:10px 14px;text-align:center">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${trow('Satisfacción de Usuarios', SAT_DSK, 72.0, null, '%',
+                  'Encuesta Satisfacción Minsalud 2024', false, '')}
+                ${trow('Tasa de Cesáreas (P.1.3)', dCes, 46.2, 15.0, '%',
+                  'SISPRO 2023 · OPS/OMS · Res. 0256/2016', true, 'Res. 0256/2016 P.1.3')}
+                ${trow('Mortalidad Intrahospitalaria', dMort, 2.8, 2.5, '%',
+                  'Minsalud MSPS 2023', true, '')}
+                ${trow('Reingreso Urgencias <72h (P.2.13)', dReing, 10.2, 8.0, '%',
+                  'Res. 0256/2016 P.2.13 · SISPRO 2023', true, 'Res. 0256/2016 P.2.13')}
+                ${trow('Estancia Promedio Hospitalaria', dEst, 5.4, 6.0, ' días',
+                  'SISPRO 2023', true, '')}
+                ${trow('UCI — % del total hospitalizado', dUCI, 11.4, 12.0, '%',
+                  'SISPRO 2023', true, '')}
+                ${trow('Tutelas por 1.000 afiliados', TUT_DSK, 4.8, null, '',
+                  'Supersalud 2024', true, '')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Comparativo EPSI -->
+        <div class="bm-section">
+          <div class="bm-section-hd">
+            <h3>🏥 Comparativo EPSI — Satisfacción de Usuarios 2024</h3>
+          </div>
+          <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8f9fa;font-size:11px;color:#666;text-transform:uppercase">
+                  <th style="padding:10px 14px;text-align:left">EPSI</th>
+                  <th style="padding:10px 14px;text-align:center">Satisfacción</th>
+                  <th style="padding:10px 14px;text-align:center">Recomendaría</th>
+                  <th style="padding:10px 14px;text-align:center">Posición</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#e8f5e9">
+                  <td style="padding:10px 14px;font-weight:700">⭐ Dusakawi EPSI</td>
+                  <td style="text-align:center;font-weight:800;color:#27ae60;font-size:15px">96.66%</td>
+                  <td style="text-align:center;font-weight:700;color:#27ae60">96.18%</td>
+                  <td style="text-align:center">
+                    <span style="background:#27ae60;color:#fff;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700">#1 Nacional</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#555">Mallamas EPSI</td>
+                  <td style="text-align:center;color:#888">~78%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="background:#e67e22;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#555">Anas Wayuu EPSI</td>
+                  <td style="text-align:center;color:#888">~74%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="background:#95a5a6;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#555">AIC (Asoc. Indígena del Cauca)</td>
+                  <td style="text-align:center;color:#e74c3c;font-weight:700">~46%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center"><span style="background:#e74c3c;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Por mejorar</span></td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:10px 14px;color:#888"><i>Media Nacional EPS/EPSI</i></td>
+                  <td style="text-align:center;color:#888">72.0%</td>
+                  <td style="text-align:center;color:#aaa">—</td>
+                  <td style="text-align:center"><span style="background:#bdc3c7;color:#fff;border-radius:8px;padding:2px 8px;font-size:11px">Referencia</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:8px 20px;font-size:10px;color:#bbb;border-top:1px solid #f0f0f0">
+            📌 Fuente: Encuesta de Satisfacción de Usuarios — Minsalud 2024. Datos de Mallamas, Anas Wayuu y AIC: estimados; datos Dusakawi verificados.
+          </div>
+        </div>
+
+        <!-- Notas metodológicas -->
+        <div class="bm-notes">
+          <b style="color:#555;font-size:12px">📌 Notas metodológicas</b><br>
+          • Los indicadores de <i>Cesáreas, Mortalidad, Reingreso, Estancia y UCI</i> se calculan en tiempo real desde la base hospitalaria activa en el sistema.<br>
+          • Promedios nacionales: estadísticas SISPRO 2023 y reportes Minsalud MSPS 2023–2024.<br>
+          • Meta cesáreas ≤15%: recomendación OPS/OMS para población general; Colombia se encuentra ~46% (SISPRO 2023).<br>
+          • Indicadores P.1.3 (cesáreas) y P.2.13 (reingreso urgencias &lt;72h) definidos en <b>Resolución 0256 de 2016</b> del Minsalud.<br>
+          • Satisfacción y tutelas son indicadores externos al sistema (no se calculan desde la base hospitalaria).
+        </div>
+
+      </div>`;
+  }
+
   // ── TAB DATOS ─────────────────────────────────────────────
   // ── MÓDULO ADMINISTRADOR ─────────────────────────────────
   // Contraseña: 123456 — persiste en sessionStorage mientras dure la sesión
@@ -4601,6 +4833,16 @@ const APP = (() => {
       toast(`✅ ${fmtN(state.rows.length)} registros exportados (${mb} MB) — envía este archivo a tus compañeros`, 'success');
       const st = document.getElementById('compartir-status');
       if (st) st.textContent = `Último export: ${fmtN(state.rows.length)} registros · ${mb} MB · ${new Date().toLocaleString('es-CO')}`;
+    },
+
+    exportBenchmarksPDF: () => {
+      // Navegar al tab benchmarks si no está activo, luego imprimir
+      if (state.activeTab !== 'benchmarks') {
+        navigate('benchmarks');
+        setTimeout(() => window.print(), 300);
+      } else {
+        window.print();
+      }
     },
 
     importarCompartir: (input) => {
