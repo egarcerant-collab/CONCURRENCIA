@@ -599,7 +599,17 @@ const APP = (() => {
       'semanas_gestacion','codigo_habilitacion_ips',
       'codigo_municipio_residencia','municipio_residencia'
     ],
-    res202: null, // null = guardar todo (se determinará según tamaño real)
+    res202: [
+      // Columnas que se sincronizan a nube — se amplían según detección automática
+      'Numero de identificacion del usuario','NumeroIdentificacion','Numero Identificacion',
+      'tipo_identificacion','Tipo Identificacion','Tipo ID',
+      'primer_apellido','segundo_apellido','primer_nombre','segundo_nombre','Nombre Paciente',
+      'Fecha Ingreso','fecha_atencion','fecha_servicio','Fecha Servicio','Fecha',
+      'Diagnostico','Cie10 Diagnostico','codigo_diagnostico','diagnostico_principal','Codigo Diagnostico',
+      'IPS','codigo_habilitacion_ips','nombre_ips','Prestador',
+      'Servicio','tipo_servicio','Tipo Servicio','Especialidad',
+      'Valor','valor_total','Valor Total',
+    ],
   };
 
   // Normalización simple de nombre de columna (sin regex de caracteres Unicode)
@@ -681,6 +691,135 @@ const APP = (() => {
     }
   }
 
+  // ── Res202: columnas candidatas para auto-detección ──────
+  const R202_ID   = ['Numero de identificacion del usuario','NumeroIdentificacion','Numero Identificacion','identificacion','documento','num_doc','No. Identificación','Identificacion','NUMERO_IDENTIFICACION'];
+  const R202_TIPO = ['tipo_identificacion','Tipo Identificacion','Tipo ID','TipoIdentificacion'];
+  const R202_FECH = ['Fecha Ingreso','fecha_atencion','fecha_servicio','Fecha Servicio','Fecha','FechaServicio','fecha_inicio','Fecha Inicio'];
+  const R202_DX   = ['Diagnostico','Cie10 Diagnostico','codigo_diagnostico','diagnostico_principal','Codigo Diagnostico','CIE10','Dx','DIAGNOSTICO'];
+  const R202_IPS  = ['IPS','codigo_habilitacion_ips','nombre_ips','Prestador','NombreIPS','NOMBRE_IPS'];
+  const R202_SRV  = ['Servicio','tipo_servicio','Tipo Servicio','Especialidad','TipoServicio','SERVICIO'];
+
+  // Detecta la primera columna real que coincida con la lista de candidatas
+  function detectCol(row, candidates) {
+    for (const c of candidates) {
+      if (row[c] !== undefined) return c;
+      const norm = normCol(c);
+      const real = Object.keys(row).find(k => normCol(k) === norm);
+      if (real) return real;
+    }
+    return null;
+  }
+
+  // Analiza qué columnas clave tiene el archivo res202 cargado
+  function analyzeRes202Cols(rows) {
+    if (!rows.length) return {};
+    const s = rows[0];
+    return {
+      id:   detectCol(s, R202_ID),
+      tipo: detectCol(s, R202_TIPO),
+      fech: detectCol(s, R202_FECH),
+      dx:   detectCol(s, R202_DX),
+      ips:  detectCol(s, R202_IPS),
+      srv:  detectCol(s, R202_SRV),
+      total: Object.keys(s).length,
+    };
+  }
+  state._res202Cols = {}; // columnas detectadas, para usar en el cruce
+
+  // Persiste res202 compacto en localStorage (solo columnas de cruce)
+  function saveRes202Local(rows, fileName) {
+    try {
+      const cols = analyzeRes202Cols(rows);
+      state._res202Cols = cols;
+      if (!cols.id) {
+        console.warn('[Res202] No se detectó columna de ID — no se puede guardar compacto');
+        return 0;
+      }
+      const compact = rows.map(r => {
+        const o = { i: String(r[cols.id] || '').trim() };
+        if (cols.tipo) o.t = String(r[cols.tipo] || '').trim().slice(0, 4);
+        if (cols.fech) o.f = String(r[cols.fech] || '').trim().slice(0, 10);
+        if (cols.dx)   o.d = String(r[cols.dx]   || '').trim().slice(0, 10);
+        if (cols.ips)  o.p = String(r[cols.ips]  || '').trim().slice(0, 30);
+        if (cols.srv)  o.s = String(r[cols.srv]  || '').trim().slice(0, 20);
+        return o;
+      }).filter(r => r.i); // descartar filas sin ID
+      localStorage.setItem('ir_RES202_COMPACT', JSON.stringify({ rows: compact, fileName, cols }));
+      console.info(`[Res202] ${compact.length} registros guardados compactos (col ID: "${cols.id}")`);
+      return compact.length;
+    } catch(e) {
+      console.warn('[Res202] Error guardando compacto:', e.message);
+      return 0;
+    }
+  }
+
+  // Restaura res202 compacto desde localStorage
+  function loadRes202Local() {
+    try {
+      const raw = localStorage.getItem('ir_RES202_COMPACT');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!parsed.rows?.length) return false;
+      const cols = parsed.cols || {};
+      state._res202Cols = cols;
+      // Expandir al formato estándar con nombres de columna detectados
+      state.res202Rows = parsed.rows.map(r => {
+        const obj = {};
+        obj[cols.id || 'Numero de identificacion del usuario'] = r.i;
+        if (r.t !== undefined) obj[cols.tipo || 'tipo_identificacion'] = r.t;
+        if (r.f !== undefined) obj[cols.fech || 'Fecha']              = r.f;
+        if (r.d !== undefined) obj[cols.dx   || 'Diagnostico']        = r.d;
+        if (r.p !== undefined) obj[cols.ips  || 'IPS']                = r.p;
+        if (r.s !== undefined) obj[cols.srv  || 'Servicio']           = r.s;
+        return obj;
+      });
+      state.fileNames['res202'] = parsed.fileName || 'Res202 (caché local)';
+      console.info(`[Res202 Local] Restaurado: ${state.res202Rows.length} registros`);
+      return true;
+    } catch(e) {
+      console.warn('[Res202 Local] Error al restaurar:', e.message);
+      return false;
+    }
+  }
+
+  // Cruce res202 × DETALLADO por ID de paciente (normalizado)
+  function cruzarRes202() {
+    if (!state.res202Rows.length || !state.rows.length) return null;
+    const cols = state._res202Cols;
+    const idCol202 = cols.id || 'Numero de identificacion del usuario';
+    // Normalizar: solo dígitos del ID
+    const norm = v => String(v || '').replace(/\D/g, '').trim();
+    // Índice inverso res202: Map<id → [rows]>
+    const idx = new Map();
+    for (const r of state.res202Rows) {
+      const id = norm(r[idCol202]);
+      if (!id) continue;
+      if (!idx.has(id)) idx.set(id, []);
+      idx.get(id).push(r);
+    }
+    // Buscar cuáles pacientes del DETALLADO están en Res202
+    const detIdCol = 'Numero Identificacion';
+    let encontrados = 0, filasCruce = [];
+    const vistosDetallado = new Set();
+    for (const r of state.rows) {
+      const id = norm(r[detIdCol] || r['Numero de identificacion del usuario'] || '');
+      if (!id || vistosDetallado.has(id)) continue;
+      if (idx.has(id)) {
+        encontrados++;
+        vistosDetallado.add(id);
+        filasCruce.push({ det: r, r202: idx.get(id) });
+      }
+    }
+    return {
+      totalDetallado: new Set(state.rows.map(r => norm(r[detIdCol] || r['Numero de identificacion del usuario'] || '')).filter(Boolean)).size,
+      total202: idx.size,
+      encontrados,
+      filasCruce: filasCruce.slice(0, 200), // máximo 200 para la tabla
+      idCol202,
+    };
+  }
+  window._cruzarRes202 = cruzarRes202; // exponer para debugging
+
   // Upload por fuente específica (desde tab Datos)
   function handleUploadSource(input, sourceKey) {
     const file = input.files[0]; if (!file) return;
@@ -705,6 +844,20 @@ const APP = (() => {
         if (sourceKey === 'pyp') {
           const n = savePyPLocal(rows, file.name);
           toast(`✅ PyP: ${fmtN(rows.length)} registros en memoria · ${n} IDs guardados localmente 🔒`,'success');
+        } else if (sourceKey === 'res202') {
+          const cols = analyzeRes202Cols(rows);
+          state._res202Cols = cols;
+          const n = saveRes202Local(rows, file.name);
+          const colInfo = cols.id ? `· ID: "${cols.id}"` : '· ⚠️ sin columna ID detectada';
+          const cruceInfo = cols.id ? ` · ${cols.total} columnas totales` : '';
+          toast(`✅ Res202: ${fmtN(rows.length)} registros · ${n} IDs guardados localmente ${colInfo}${cruceInfo}`,'success');
+          // Mostrar resumen del cruce disponible
+          if (state.rows.length && cols.id) {
+            setTimeout(() => {
+              const c = cruzarRes202();
+              if (c) toast(`🔗 Cruce disponible: ${fmtN(c.encontrados)} de ${fmtN(c.totalDetallado)} pacientes del DETALLADO aparecen en Res202`, 'info');
+            }, 800);
+          }
         } else {
           toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
         }
@@ -890,10 +1043,16 @@ const APP = (() => {
       }
     }
 
-    // PyP: si Supabase no tenía datos, restaurar desde localStorage compacto
+    // PyP: si no había en nube/IDB, restaurar desde localStorage compacto
     if (state.pypRows.length === 0) {
       if (loadPyPLocal()) {
         console.info('[loadSaved] PyP restaurado desde localStorage compacto →', state.pypRows.length, 'registros');
+      }
+    }
+    // Res202: si no había en nube/IDB, restaurar desde localStorage compacto
+    if (state.res202Rows.length === 0) {
+      if (loadRes202Local()) {
+        console.info('[loadSaved] Res202 restaurado desde localStorage compacto →', state.res202Rows.length, 'registros');
       }
     }
 
@@ -3824,6 +3983,24 @@ const APP = (() => {
           </label>
           ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
         </div>
+        ${src.key === 'res202' && loaded ? (() => {
+          const cols = state._res202Cols || {};
+          const hasCols = cols.id || cols.fech || cols.dx || cols.ips;
+          const cruceDisp = state.rows.length && cols.id;
+          return `<div style="margin-top:12px;padding:10px 12px;background:rgba(230,126,34,.08);border-radius:8px;border:1px solid rgba(230,126,34,.25)">
+            ${hasCols ? `<div style="font-size:11px;color:#7d5a2e;margin-bottom:8px;font-weight:600">🔍 Columnas detectadas:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${cruceDisp?'10px':'0'}">
+              ${cols.id  ? `<span style="font-size:10px;background:#fff3e0;border:1px solid #e67e22;border-radius:4px;padding:2px 7px">ID: <b>${cols.id}</b></span>` : ''}
+              ${cols.fech? `<span style="font-size:10px;background:#fff3e0;border:1px solid #e67e22;border-radius:4px;padding:2px 7px">Fecha: <b>${cols.fech}</b></span>` : ''}
+              ${cols.dx  ? `<span style="font-size:10px;background:#fff3e0;border:1px solid #e67e22;border-radius:4px;padding:2px 7px">Dx: <b>${cols.dx}</b></span>` : ''}
+              ${cols.ips ? `<span style="font-size:10px;background:#fff3e0;border:1px solid #e67e22;border-radius:4px;padding:2px 7px">IPS: <b>${cols.ips}</b></span>` : ''}
+              ${cols.srv ? `<span style="font-size:10px;background:#fff3e0;border:1px solid #e67e22;border-radius:4px;padding:2px 7px">Servicio: <b>${cols.srv}</b></span>` : ''}
+              <span style="font-size:10px;background:#f5f5f5;border:1px solid #ccc;border-radius:4px;padding:2px 7px;color:#777">${fmtN(cols.total||0)} cols. totales</span>
+            </div>` : `<div style="font-size:11px;color:#c0392b;margin-bottom:8px">⚠️ No se detectó columna de ID de paciente — el cruce no está disponible</div>`}
+            ${cruceDisp ? `<button class="btn btn-secondary btn-sm" onclick="APP.mostrarCruceRes202()" style="background:#e67e22;color:#fff;border-color:#e67e22">🔗 Ver cruce con DETALLADO</button>` : (!state.rows.length ? `<div style="font-size:11px;color:#888;margin-top:4px">Carga el DETALLADO para activar el cruce</div>` : '')}
+            <div id="res202-cruce-result" style="margin-top:10px"></div>
+          </div>`;
+        })() : (src.key === 'res202' && !loaded ? `<div style="margin-top:10px;font-size:11px;color:#aaa;font-style:italic">Carga el archivo Res. 202 para habilitar el cruce con DETALLADO</div>` : '')}
       </div>`;
     }
 
@@ -3921,6 +4098,62 @@ const APP = (() => {
   }
 
   return {
+    mostrarCruceRes202: () => {
+      const el = document.getElementById('res202-cruce-result');
+      if (!el) return;
+      el.innerHTML = '<span style="font-size:12px;color:#888">Calculando cruce…</span>';
+      setTimeout(() => {
+        const c = window._cruzarRes202 && window._cruzarRes202();
+        if (!c) {
+          el.innerHTML = '<span style="font-size:12px;color:#c0392b">No hay datos suficientes para el cruce</span>';
+          return;
+        }
+        const pct = c.totalDetallado ? Math.round(c.encontrados / c.totalDetallado * 100) : 0;
+        const color = pct >= 70 ? '#27ae60' : pct >= 40 ? '#e67e22' : '#c0392b';
+        let html = `<div style="padding:10px;background:#fff;border-radius:6px;border:1px solid #e0e0e0">
+          <div style="font-size:13px;font-weight:700;color:${color};margin-bottom:6px">
+            🔗 ${fmtN(c.encontrados)} de ${fmtN(c.totalDetallado)} pacientes del DETALLADO aparecen en Res202 (${pct}%)
+          </div>
+          <div style="height:8px;background:#f0f0f0;border-radius:4px;margin-bottom:10px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width .4s"></div>
+          </div>
+          <div style="font-size:11px;color:#666;margin-bottom:10px">
+            Res202 tiene ${fmtN(c.total202)} IDs únicos · DETALLADO tiene ${fmtN(c.totalDetallado)} pacientes únicos
+          </div>`;
+        if (c.filasCruce.length) {
+          const sample = c.filasCruce.slice(0, 20);
+          const idCol = c.idCol202;
+          const cols202 = state._res202Cols || {};
+          html += `<div style="font-size:11px;color:#555;margin-bottom:6px;font-weight:600">Primeros ${sample.length} pacientes cruzados:</div>
+          <div style="overflow-x:auto;max-height:200px;overflow-y:auto">
+          <table style="width:100%;font-size:10px;border-collapse:collapse">
+            <thead><tr style="background:#f5f5f5">
+              <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #e0e0e0">ID Paciente</th>
+              <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #e0e0e0">Nombre (DETALLADO)</th>
+              <th style="padding:4px 6px;text-align:left;border-bottom:1px solid #e0e0e0">IPS (DETALLADO)</th>
+              <th style="padding:4px 6px;text-align:center;border-bottom:1px solid #e0e0e0">Registros Res202</th>
+            </tr></thead>
+            <tbody>${sample.map((f,i) => {
+              const idVal = f.det[idCol] || f.det['Numero Identificacion'] || f.det['Numero de identificacion del usuario'] || '';
+              const nombre = [f.det['Primer Nombre']||'', f.det['Segundo Nombre']||'', f.det['Primer Apellido']||'', f.det['Segundo Apellido']||''].filter(Boolean).join(' ') || f.det['Nombre Paciente'] || '';
+              const ips = f.det['Nombre IPS'] || f.det['IPS'] || f.det['Prestador'] || '';
+              return `<tr style="background:${i%2?'#fafafa':'#fff'}">
+                <td style="padding:3px 6px;font-family:monospace">${idVal}</td>
+                <td style="padding:3px 6px">${nombre}</td>
+                <td style="padding:3px 6px;font-size:9px">${ips}</td>
+                <td style="padding:3px 6px;text-align:center;font-weight:700;color:#e67e22">${f.r202.length}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table></div>`;
+          if (c.encontrados > 20) {
+            html += `<div style="font-size:10px;color:#999;margin-top:6px">… y ${fmtN(c.encontrados-20)} pacientes más</div>`;
+          }
+        }
+        html += '</div>';
+        el.innerHTML = html;
+      }, 50);
+    },
+
     toggleTheme: () => {
       const cur = document.documentElement.getAttribute('data-theme') || 'light';
       const next = cur === 'dark' ? 'light' : 'dark';
