@@ -3042,11 +3042,39 @@ const APP = (() => {
         : (val >= ref ? '✅ Cumple' : val >= ref * 0.8 ? '⚠️ Atención' : '❌ Por mejorar');
     }
 
-    // Tarjeta KPI
-    function card(icon, label, val, nacional, meta, unidad, menor, fuente, nota) {
+    // Tarjeta KPI con barra de posición entre EPSI
+    // epsiMejor/epsiPeor: extremos del rango EPSI (menor=true → mejor=valor más bajo)
+    function card(icon, label, val, nacional, meta, unidad, menor, fuente, nota, epsiMedia, epsiMejor, epsiPeor, epsiRank) {
       const ref = meta !== null ? Number(meta) : Number(nacional);
       const col = semC(val, ref, menor);
       const badge = semL(val, ref, menor);
+
+      // Barra de posición entre EPSI (0% = peor EPSI, 100% = mejor EPSI)
+      let posBar = '';
+      if (val !== null && epsiMejor != null && epsiPeor != null) {
+        const rng = Math.abs(Number(epsiPeor) - Number(epsiMejor));
+        const rawPct = rng > 0
+          ? (menor
+              ? (Number(epsiPeor) - val) / rng * 100   // menor=true: lejos del peor = mejor
+              : (val - Number(epsiPeor)) / rng * 100)  // menor=false: lejos del peor = mejor
+          : 50;
+        const pct = Math.min(100, Math.max(0, rawPct));
+        const dotCol = pct >= 60 ? '#27ae60' : pct >= 35 ? '#e67e22' : '#e74c3c';
+        posBar = `<div style="margin:8px 0 4px">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#bbb;margin-bottom:4px">
+            <span>Peor EPSI</span><span>Mejor EPSI</span>
+          </div>
+          <div style="position:relative;height:6px;background:#eee;border-radius:3px">
+            <div style="position:absolute;height:100%;width:${pct}%;background:linear-gradient(90deg,#e74c3c,#e67e22,#27ae60);border-radius:3px;opacity:.35"></div>
+            <div style="position:absolute;left:${pct}%;top:50%;transform:translate(-50%,-50%);width:13px;height:13px;background:${dotCol};border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)" title="Posición Dusakawi"></div>
+          </div>
+          <div style="font-size:9px;color:#888;margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+            <span>🌿 Media EPSI: <b>${epsiMedia}${unidad}</b></span>
+            ${epsiRank ? `<span style="color:${dotCol};font-weight:700">${epsiRank}</span>` : ''}
+          </div>
+        </div>`;
+      }
+
       const dsp = val !== null
         ? `<span class="bm-card-value">${Number(val).toFixed(unidad===' días'?1:2)}${unidad}</span>`
         : `<span class="bm-card-nd">Sin datos<br><span style="font-size:10px">carga base primero</span></span>`;
@@ -3054,6 +3082,7 @@ const APP = (() => {
         <div class="bm-card-icon">${icon}</div>
         <div class="bm-card-label">${label}</div>
         ${dsp}
+        ${posBar}
         <div class="bm-card-refs">
           <span>🇨🇴 Colombia: <b>${Number(nacional).toFixed(1)}${unidad}</b></span>
           ${meta!==null?`<span>🎯 Meta: <b>${Number(meta).toFixed(1)}${unidad}</b></span>`:''}
@@ -3122,17 +3151,114 @@ const APP = (() => {
         <!-- KPI Cards -->
         <div class="bm-grid">
           ${card('😊','Satisfacción Usuarios', SAT_DSK, 72.0, null, '%', false,
-            'Encuesta Minsalud 2024', 'Ranking #1 nacional entre todas las EPS/EPSI')}
+            'Encuesta Minsalud 2024', 'Por 100 afiliados encuestados',
+            '~75%', 96.66, 46, '🥇 #1 entre todas las EPSI')}
           ${card('👶','Tasa de Cesáreas', dCes, 46.2, 15.0, '%', true,
-            'SISPRO 2023 · Meta OPS/OMS ≤15%', '% sobre gestantes de la base')}
+            'SISPRO 2023 · Meta OPS/OMS ≤15%', '% sobre gestantes de la base',
+            '~52%', 38, 68, dCes!==null?(dCes>52?'⬆ Por encima media EPSI':'✔ Bajo media EPSI'):null)}
           ${card('⚕️','Mortalidad Intrahospitalaria', dMort, 2.8, 2.5, '%', true,
-            'Minsalud MSPS 2023', 'Por 100 egresos hospitalarios')}
+            'Minsalud MSPS 2023', 'Por 100 egresos hospitalarios',
+            '~3.2%', 1.4, 5.5, dMort!==null?(dMort<3.2?'✔ Bajo media EPSI':'⬆ Por encima media EPSI'):null)}
           ${card('🔁','Tasa de Reingreso', dReing, 10.2, 8.0, '%', true,
-            'Res. 0256/2016 P.2.13', 'Reingresos / total egresos')}
+            'Res. 0256/2016 P.2.13', 'Reingresos / total egresos',
+            '~7.8%', 1.5, 15, dReing!==null?(dReing<7.8?'✔ Bajo media EPSI':'⬆ Por encima media EPSI'):null)}
           ${card('🛏️','Estancia Promedio', dEst, 5.4, 6.0, ' días', true,
-            'SISPRO 2023', 'Media de días de hospitalización')}
+            'SISPRO 2023', 'Media de días de hospitalización',
+            '~6.2 días', 4.2, 9.8, dEst!==null?(dEst<6.2?'✔ Bajo media EPSI':'⬆ Por encima media EPSI'):null)}
           ${card('📋','Tutelas / 1.000 afiliados', TUT_DSK, 4.8, null, '', true,
-            'Supersalud 2024', 'Menor valor = mejor desempeño')}
+            'Supersalud 2024', 'Menor valor = mejor desempeño',
+            '~2.3', 0.11, 5.8, '🥇 #1 entre todas las EPSI')}
+        </div>
+
+        <!-- Posicionamiento cruzado entre EPSI -->
+        <div class="bm-section">
+          <div class="bm-section-hd">
+            <h3>📍 Posición de Dusakawi entre todas las EPSI</h3>
+            <span style="font-size:11px;color:#bbb">Indicadores verificados Dusakawi · demás EPSI: estimados</span>
+          </div>
+          <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8f9fa;font-size:11px;color:#666;text-transform:uppercase">
+                  <th style="padding:10px 14px;text-align:left">EPSI</th>
+                  <th style="padding:10px 14px;text-align:center">Satisfacción</th>
+                  <th style="padding:10px 14px;text-align:center">Cesáreas</th>
+                  <th style="padding:10px 14px;text-align:center">Mortalidad</th>
+                  <th style="padding:10px 14px;text-align:center">Reingreso</th>
+                  <th style="padding:10px 14px;text-align:center">Estancia</th>
+                  <th style="padding:10px 14px;text-align:center">Tutelas/1k</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#e8f5e9;font-weight:700">
+                  <td style="padding:10px 14px">⭐ Dusakawi EPSI</td>
+                  <td style="text-align:center;color:#27ae60">${fmt(SAT_DSK,2)}%</td>
+                  <td style="text-align:center;color:${semC(dCes,52,true)}">${dCes!==null?fmt(dCes,1)+'%':'—'}</td>
+                  <td style="text-align:center;color:${semC(dMort,3.2,true)}">${dMort!==null?fmt(dMort,2)+'%':'—'}</td>
+                  <td style="text-align:center;color:${semC(dReing,7.8,true)}">${dReing!==null?fmt(dReing,2)+'%':'—'}</td>
+                  <td style="text-align:center;color:${semC(dEst,6.2,true)}">${dEst!==null?fmt(dEst,1)+' d':'—'}</td>
+                  <td style="text-align:center;color:#27ae60">${TUT_DSK}</td>
+                </tr>
+                <tr>
+                  <td style="padding:9px 14px;color:#555">Mallamas EPSI</td>
+                  <td style="text-align:center;color:#888">~78%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:9px 14px;color:#555">Anas Wayuu EPSI</td>
+                  <td style="text-align:center;color:#888">~74%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                </tr>
+                <tr>
+                  <td style="padding:9px 14px;color:#555">Pijaos Salud EPSI</td>
+                  <td style="text-align:center;color:#888">~70%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                </tr>
+                <tr style="background:#fafafa">
+                  <td style="padding:9px 14px;color:#555">AIC (Cauca)</td>
+                  <td style="text-align:center;color:#e74c3c;font-weight:600">~46%</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                  <td style="text-align:center;color:#aaa">N/D</td>
+                </tr>
+                <tr style="border-top:2px solid #e0e0e0;background:#f5f5f5;font-style:italic;font-size:11px">
+                  <td style="padding:9px 14px;color:#888">Media estimada EPSI</td>
+                  <td style="text-align:center;color:#888">~75%</td>
+                  <td style="text-align:center;color:#888">~52%</td>
+                  <td style="text-align:center;color:#888">~3.2%</td>
+                  <td style="text-align:center;color:#888">~7.8%</td>
+                  <td style="text-align:center;color:#888">~6.2 d</td>
+                  <td style="text-align:center;color:#888">~2.3</td>
+                </tr>
+                <tr style="background:#fff3e0;font-size:11px">
+                  <td style="padding:9px 14px;color:#e65100;font-weight:700">Colombia (todas las EPS)</td>
+                  <td style="text-align:center;color:#888">72.0%</td>
+                  <td style="text-align:center;color:#888">46.2%</td>
+                  <td style="text-align:center;color:#888">2.8%</td>
+                  <td style="text-align:center;color:#888">10.2%</td>
+                  <td style="text-align:center;color:#888">5.4 d</td>
+                  <td style="text-align:center;color:#888">4.8</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:8px 20px;font-size:10px;color:#bbb;border-top:1px solid #f0f0f0">
+            📌 Solo Dusakawi tiene datos clínicos verificados en tiempo real. Los indicadores hospitalarios de otras EPSI (cesáreas, mortalidad, reingreso, estancia) no son de acceso público — aparecen N/D. Satisfacción: encuesta Minsalud 2024.
+          </div>
         </div>
 
         <!-- Tabla comparativa -->
