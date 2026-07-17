@@ -3921,7 +3921,32 @@ const APP = (() => {
   }
 
   return {
+    toggleTheme: () => {
+      const cur = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+      if (window.Chart) {
+        const dk = next === 'dark';
+        Chart.defaults.color       = dk ? '#7a9ab4' : '#666';
+        Chart.defaults.borderColor = dk ? '#253547' : '#e0e0e0';
+      }
+      render();
+    },
+
     init: async () => {
+      // Restaurar tema guardado
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+      if (window.Chart && savedTheme === 'dark') {
+        Chart.defaults.color       = '#7a9ab4';
+        Chart.defaults.borderColor = '#253547';
+      }
+
       // ── Modo Admin: ?admin=1 en la URL muestra el sidebar de Cargar Datos ──
       const isAdmin = new URLSearchParams(window.location.search).get('admin') === '1';
       const sidebarDatos = document.getElementById('sidebar-datos');
