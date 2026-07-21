@@ -876,8 +876,8 @@ const APP = (() => {
   // Upload por fuente específica (desde tab Datos)
   function handleUploadSource(input, sourceKey) {
     const file = input.files[0]; if (!file) return;
-    // Auto-detección: si el archivo se llama informe_4505* siempre va a pyp
-    if (sourceKey !== 'pyp' && esPyPFilename(file.name)) {
+    // Auto-detección: solo redirige a pyp si el usuario NO eligió explícitamente res202
+    if (sourceKey !== 'pyp' && sourceKey !== 'res202' && esPyPFilename(file.name)) {
       sourceKey = 'pyp';
     }
     const src = SOURCES.find(s=>s.key===sourceKey);
@@ -4044,6 +4044,7 @@ const APP = (() => {
             <span class="btn btn-${src.required?'primary':'secondary'} btn-sm">${loaded?'🔄 Cambiar archivo':'📂 Cargar archivo'}</span>
           </label>
           ${loaded && src.key !== 'detallado' ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>` : ''}
+          ${loaded && src.key !== 'detallado' ? `<button class="btn btn-sm" onclick="APP.subirFuenteADrive('${src.key}')" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">☁️ Subir a Drive</button>` : ''}
         </div>
         ${src.key === 'res202' && loaded ? (() => {
           const cols = state._res202Cols || {};
@@ -4161,6 +4162,14 @@ const APP = (() => {
 
   return {
     _toast: toast,
+
+    subirFuenteADrive: (sourceKey) => {
+      const stateKey = sourceKey + 'Rows';
+      const rows = state[stateKey];
+      if (!rows || !rows.length) { toast('⚠️ No hay datos cargados para esta fuente', 'error'); return; }
+      toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Google Drive…`, 'info');
+      uploadFileToDrive(rows, sourceKey);
+    },
 
     mostrarCruceRes202: () => {
       const el = document.getElementById('res202-cruce-result');
