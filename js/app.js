@@ -3829,50 +3829,13 @@ const APP = (() => {
         <!-- Paso 2: Preview + botón confirmar (oculto hasta selección) -->
         <div id="admin-file-preview" style="display:none;margin-top:14px;padding:12px 16px;background:#f0f7ff;border:1.5px solid #2980b9;border-radius:8px;font-size:13px"></div>
 
-        <!-- Sincronización con Google Sheets -->
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d1dce8">
-          <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:8px">🔗 Google Sheets — Sincronización automática</div>
-          <p style="font-size:11px;color:#555;margin:0 0 10px">
-            Cuando subes un archivo Excel, los datos se escriben automáticamente en la hoja compartida.
-            Todos los compañeros verán los datos actualizados al instante.
-          </p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <input id="gscript-url-input" type="text"
-              placeholder="https://script.google.com/macros/s/…/exec"
-              value="${(function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })()}"
-              style="flex:1;min-width:260px;padding:8px 12px;border:1.5px solid #34a853;border-radius:8px;font-size:12px;outline:none">
-            <button onclick="APP.guardarGScriptUrl()"
-              style="padding:8px 16px;background:#34a853;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-              💾 Guardar URL
-            </button>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <button onclick="APP.recargarGSheets()"
-              style="padding:8px 18px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
-              📊 Recargar desde Google Sheets
-            </button>
-            <span style="font-size:11px;color:#888">Fuerza la recarga si alguien actualizó la hoja manualmente</span>
-          </div>
-          <div id="gscript-status" style="font-size:11px;color:#888;margin-top:6px"></div>
-
-          <!-- Carpeta destino en Drive -->
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid #d1dce8">
-            <div style="font-size:12px;font-weight:700;color:#1565c0;margin-bottom:8px">📂 Carpeta de destino en Google Drive</div>
-            <p style="font-size:11px;color:#555;margin:0 0 8px">
-              Pega el enlace de la carpeta de Drive donde se guardarán los archivos auxiliares al usar el botón <b>☁️ Subir a Drive</b>.
-            </p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input id="drive-folder-input" type="text"
-                placeholder="https://drive.google.com/drive/folders/…"
-                value="${(function(){ try{ return localStorage.getItem('drive_folder_id')||''; }catch(e){ return ''; } })()}"
-                style="flex:1;min-width:260px;padding:8px 12px;border:1.5px solid #1565c0;border-radius:8px;font-size:12px;outline:none">
-              <button onclick="APP.guardarDriveFolderId()"
-                style="padding:8px 16px;background:#1565c0;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-                💾 Guardar carpeta
-              </button>
-            </div>
-            <div id="drive-folder-status" style="font-size:11px;color:#888;margin-top:6px"></div>
-          </div>
+        <!-- Sincronización automática — sin configuración manual -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #d1dce8;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button onclick="APP.recargarGSheets()"
+            style="padding:9px 20px;background:#1b7a34;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+            📊 Recargar desde Google Sheets
+          </button>
+          <span style="font-size:11px;color:#888">✅ Sincronización con Google Sheets y Drive configurada</span>
         </div>
 
         <!-- ── COMPARTIR DATOS CON COMPAÑEROS ── -->
@@ -3957,78 +3920,6 @@ const APP = (() => {
         </div>
       </div>
 
-      <!-- ── GITHUB GIST (almacenamiento compartido principal) ── -->
-      ${(() => {
-        const gCfg  = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
-        const gOk   = !!gCfg.gistId;
-        const gTok  = !!gCfg.token;
-        return `<div class="upload-section" style="border:2px solid #24292e;background:linear-gradient(135deg,#f6f8fa,#fff);margin-bottom:20px">
-          <h3 style="color:#24292e;margin:0 0 6px">🐙 GitHub Gist — Sincronización para todos</h3>
-          <p style="font-size:12px;color:#555;margin:0 0 10px">
-            ${gTok && gOk
-              ? `✅ Configurado · Gist ID: <code style="background:#f1f3f5;padding:1px 6px;border-radius:4px">${gCfg.gistId}</code><br>Al subir un Excel se sincroniza automáticamente. Los compañeros verán los datos nuevos al abrir la app.`
-              : gTok
-              ? '✅ Token configurado. Sube un Excel para crear el Gist compartido automáticamente.'
-              : 'Sin configurar. Crea un <b>Personal Access Token</b> en GitHub con permiso <code>gist</code> y pégalo aquí.'}
-          </p>
-          ${!gTok ? `
-          <div style="background:#fff8c5;border:1px solid #f0c000;border-radius:8px;padding:10px;font-size:11px;color:#555;margin-bottom:10px">
-            <b>📋 Configuración rápida:</b><br>
-            1. Ve a <b>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)</b><br>
-            2. Clic en <b>Generate new token</b> → marca solo el checkbox <b>gist</b><br>
-            3. Copia el token y pégalo aquí abajo
-          </div>` : ''}
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-            <input id="gist-token-input" type="text" placeholder="${gTok ? 'Pega aquí el nuevo token para reemplazar...' : 'ghp_...'}"
-              autocomplete="off" spellcheck="false"
-              style="flex:1;min-width:250px;padding:8px 12px;border:1.5px solid #24292e;border-radius:8px;font-size:12px;outline:none;font-family:monospace">
-            <button onclick="APP.gistConfigSave()"
-              style="padding:8px 18px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-              💾 ${gTok ? 'Reemplazar token' : 'Guardar token'}
-            </button>
-          </div>
-          ${gTok ? `
-          <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button onclick="APP.gistVerificarToken()"
-              style="padding:7px 16px;background:#0366d6;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
-              🔍 Verificar token y permisos
-            </button>
-            <span id="gist-verify-status" style="font-size:11px;color:#888"></span>
-          </div>
-          <div style="margin-bottom:10px">
-            <button onclick="APP.gistSubirAhora()"
-              style="padding:10px 22px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
-              ⬆️ Subir datos a GitHub Gist ahora
-            </button>
-            <span id="gist-upload-status" style="font-size:11px;color:#888;margin-left:10px"></span>
-          </div>` : ''}
-          ${gOk ? `
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <a href="https://gist.github.com/${gCfg.gistId}" target="_blank" rel="noopener"
-              style="padding:6px 14px;background:#24292e;color:#fff;border-radius:8px;font-size:12px;text-decoration:none">
-              🔗 Ver Gist en GitHub
-            </a>
-            <button onclick="APP.gistConfigClear()"
-              style="padding:6px 14px;background:#fff;border:1.5px solid #24292e;color:#24292e;border-radius:8px;font-size:12px;cursor:pointer">
-              🔌 Desconectar
-            </button>
-          </div>` : ''}
-          ${gTok && !gOk ? `<p style="font-size:11px;color:#888;margin:0">Sube un archivo Excel o usa el botón de arriba para crear el Gist compartido.</p>` : ''}
-          <div id="gist-status" style="font-size:11px;color:#888;margin-top:6px"></div>
-        </div>`;
-      })()}
-
-      <!-- ── INDEXEDDB ── -->
-      <div class="upload-section" style="border:2px solid #546e7a;background:linear-gradient(135deg,#eceff1,#fff);margin-bottom:20px">
-        <h3 style="color:#37474f;margin:0 0 6px">💾 Almacenamiento Local — IndexedDB</h3>
-        <p style="font-size:12px;color:#666;margin:0 0 12px">
-          Caché local en el navegador. Permite cargar datos sin conexión cuando Gist o Google Sheets no están disponibles.
-        </p>
-        <div id="idb-status-panel" style="font-size:12px;color:#999">Consultando…</div>
-        <button onclick="APP.idbRefresh()" style="margin-top:10px;padding:6px 16px;background:#546e7a;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
-          🔄 Actualizar estado
-        </button>
-      </div>
 
       <!-- ── RESUMEN ── -->
       ${totalMain > 0 ? `
@@ -4290,6 +4181,15 @@ const APP = (() => {
     },
 
     init: async () => {
+      // URLs internas — se aplican si no hay valor ya guardado en localStorage
+      const _DEFAULTS = {
+        gscript_url:    'https://script.google.com/macros/s/AKfycbzQnNriQnuuqix4BZdh13yHvOZgAVfxkBaegPtkdVesBPydqEdBTIkxh6XQYhtMRN8r/exec',
+        drive_folder_id:'1GvJuv9M4tssWIKwI9gA5TyUqFLigLIQc',
+      };
+      Object.entries(_DEFAULTS).forEach(([k,v]) => {
+        try { if (!localStorage.getItem(k)) localStorage.setItem(k, v); } catch(e) {}
+      });
+
       // Restaurar tema guardado
       const savedTheme = localStorage.getItem('theme') || 'light';
       document.documentElement.setAttribute('data-theme', savedTheme);
