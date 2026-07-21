@@ -3770,6 +3770,9 @@ const APP = (() => {
             ${loaded && src.key !== 'detallado'
               ? `<button class="btn btn-secondary btn-sm" onclick="APP.clearSource('${src.key}')">🗑️ Limpiar</button>`
               : ''}
+            ${loaded
+              ? `<button onclick="APP.subirFuenteADrive('${src.key}')" style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">☁️ Subir a Drive</button>`
+              : ''}
           </div>
         </div>`;
     }
