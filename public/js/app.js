@@ -666,6 +666,15 @@ const APP = (() => {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
+  function getDriveFolderId() {
+    try {
+      const raw = localStorage.getItem('drive_folder_id') || '';
+      // Acepta URL completa o solo el ID
+      const m = raw.match(/folders\/([a-zA-Z0-9_-]{10,})/);
+      return m ? m[1] : raw.trim();
+    } catch(e) { return ''; }
+  }
+
   // Sube CSV a Google Drive via Apps Script — si no hay script configurado, descarga localmente
   async function uploadFileToDrive(rows, sourceKey) {
     const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
@@ -674,24 +683,26 @@ const APP = (() => {
 
     if (!gscriptUrl) {
       exportCSV(rows, filename);
-      toast(`📥 ${filename} descargado — configura el Apps Script para subir directo a Drive`, 'info');
+      toast(`📥 ${filename} descargado — configura el Apps Script para subir a Drive`, 'info');
       return;
     }
 
     try {
       const csvContent = buildCSV(rows);
+      const folderId = getDriveFolderId();
       const payload = JSON.stringify({
         action: 'saveDriveFile',
         filename,
         content: csvContent,
+        folderId: folderId || '',
         folder: 'Indicadores_Dusakawi_EPS',
         source: sourceKey,
       });
       await fetch(gscriptUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload });
-      toast(`✅ ${filename} guardado en Google Drive (carpeta: Indicadores_Dusakawi_EPS)`, 'success');
+      toast(`✅ ${filename} guardado en Google Drive`, 'success');
     } catch(e) {
       exportCSV(rows, filename);
-      toast(`⚠️ Error al subir a Drive — descargado localmente como respaldo`, 'info');
+      toast(`⚠️ Error al subir a Drive — descargado localmente`, 'info');
     }
   }
 
@@ -3837,9 +3848,23 @@ const APP = (() => {
           </div>
           <div id="gscript-status" style="font-size:11px;color:#888;margin-top:6px"></div>
 
-          <div style="margin-top:10px;font-size:11px;color:#555;background:#e8f5e9;border-radius:6px;padding:8px 12px;border:1px solid #a5d6a7">
-            📂 Los archivos auxiliares (RCV, AIU, DNT, etc.) se guardan automáticamente en Google Drive
-            → carpeta <b>Indicadores_Dusakawi_EPS</b> al subirlos.
+          <!-- Carpeta destino en Drive -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid #d1dce8">
+            <div style="font-size:12px;font-weight:700;color:#1565c0;margin-bottom:8px">📂 Carpeta de destino en Google Drive</div>
+            <p style="font-size:11px;color:#555;margin:0 0 8px">
+              Pega el enlace de la carpeta de Drive donde se guardarán los archivos auxiliares al usar el botón <b>☁️ Subir a Drive</b>.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="drive-folder-input" type="text"
+                placeholder="https://drive.google.com/drive/folders/…"
+                value="${(function(){ try{ return localStorage.getItem('drive_folder_id')||''; }catch(e){ return ''; } })()}"
+                style="flex:1;min-width:260px;padding:8px 12px;border:1.5px solid #1565c0;border-radius:8px;font-size:12px;outline:none">
+              <button onclick="APP.guardarDriveFolderId()"
+                style="padding:8px 16px;background:#1565c0;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+                💾 Guardar carpeta
+              </button>
+            </div>
+            <div id="drive-folder-status" style="font-size:11px;color:#888;margin-top:6px"></div>
           </div>
         </div>
 
@@ -4165,6 +4190,18 @@ const APP = (() => {
 
   return {
     _toast: toast,
+
+    guardarDriveFolderId: () => {
+      const val = (document.getElementById('drive-folder-input')?.value || '').trim();
+      if (!val) { toast('⚠️ Pega el enlace de la carpeta de Drive', 'error'); return; }
+      try {
+        localStorage.setItem('drive_folder_id', val);
+        const id = getDriveFolderId();
+        const el = document.getElementById('drive-folder-status');
+        if (el) el.innerHTML = `✅ Carpeta configurada · ID: <code>${id}</code>`;
+        toast('✅ Carpeta de Drive guardada', 'success');
+      } catch(e) { toast('❌ No se pudo guardar', 'error'); }
+    },
 
     subirFuenteADrive: (sourceKey) => {
       const stateKey = sourceKey + 'Rows';
