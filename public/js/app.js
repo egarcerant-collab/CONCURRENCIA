@@ -642,9 +642,9 @@ const APP = (() => {
     });
   }
 
-  // Exporta rows como CSV descargable (BOM UTF-8 para compatibilidad con Excel en español)
-  function exportCSV(rows, filename) {
-    if (!rows || !rows.length) return;
+  // Genera string CSV (BOM UTF-8, separador ;) a partir de un array de rows
+  function buildCSV(rows) {
+    if (!rows || !rows.length) return '';
     const headers = Object.keys(rows[0]);
     const esc = v => {
       const s = String(v == null ? '' : v);
@@ -652,11 +652,47 @@ const APP = (() => {
     };
     const lines = [headers.map(esc).join(';')];
     for (const r of rows) lines.push(headers.map(h => esc(r[h])).join(';'));
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    return '﻿' + lines.join('\r\n');
+  }
+
+  // Descarga un CSV como archivo local
+  function exportCSV(rows, filename) {
+    const csv = buildCSV(rows);
+    if (!csv) return;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // Sube CSV a Google Drive via Apps Script — si no hay script configurado, descarga localmente
+  async function uploadFileToDrive(rows, sourceKey) {
+    const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    const filename = `${sourceKey.toUpperCase()}_procesado_${today}.csv`;
+    const gscriptUrl = (() => { try { return localStorage.getItem('gscript_url')||''; } catch(e){ return ''; } })();
+
+    if (!gscriptUrl) {
+      exportCSV(rows, filename);
+      toast(`📥 ${filename} descargado — configura el Apps Script para subir directo a Drive`, 'info');
+      return;
+    }
+
+    try {
+      const csvContent = buildCSV(rows);
+      const payload = JSON.stringify({
+        action: 'saveDriveFile',
+        filename,
+        content: csvContent,
+        folder: 'Indicadores_Dusakawi_EPS',
+        source: sourceKey,
+      });
+      await fetch(gscriptUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload });
+      toast(`✅ ${filename} guardado en Google Drive (carpeta: Indicadores_Dusakawi_EPS)`, 'success');
+    } catch(e) {
+      exportCSV(rows, filename);
+      toast(`⚠️ Error al subir a Drive — descargado localmente como respaldo`, 'info');
+    }
   }
 
   // Detecta si un archivo es PyP por nombre (informe_4505 o variantes)
@@ -878,12 +914,9 @@ const APP = (() => {
         } else {
           toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
         }
-        // Auto-exportar CSV procesado para guardar en Google Drive
+        // Subir CSV procesado a Google Drive (o descargar localmente si no hay script)
         if (sourceKey !== 'detallado') {
-          const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
-          const baseName = sourceKey.toUpperCase();
-          exportCSV(rows, `${baseName}_procesado_${today}.csv`);
-          setTimeout(() => toast(`📥 ${baseName}_procesado_${today}.csv descargado — arrástralo a Google Drive para guardarlo permanentemente`, 'info'), 600);
+          setTimeout(() => uploadFileToDrive(rows, sourceKey), 800);
         }
         const meta = sourceKey === 'detallado'
           ? { source: 'manual-upload', tipoReporte: 1 }
@@ -3800,6 +3833,39 @@ const APP = (() => {
             <span style="font-size:11px;color:#888">Fuerza la recarga si alguien actualizó la hoja manualmente</span>
           </div>
           <div id="gscript-status" style="font-size:11px;color:#888;margin-top:6px"></div>
+
+          <!-- Subpanel: guardar auxiliares en Drive -->
+          <div style="margin-top:12px;padding:10px 14px;background:#fff8e1;border:1px solid #f9a825;border-radius:8px">
+            <div style="font-size:12px;font-weight:700;color:#6d4c00;margin-bottom:6px">📂 Guardar archivos auxiliares en Google Drive</div>
+            <p style="font-size:11px;color:#555;margin:0 0 8px">
+              Al cargar RCV, AIU, DNT, CyD, Estancia, PyP o Res202, la app sube automáticamente un CSV procesado
+              a la carpeta <b>Indicadores_Dusakawi_EPS</b> en tu Drive.<br>
+              Para activarlo, agrega este bloque al <code>doPost</code> de tu Apps Script y re-despliega:
+            </p>
+            <div style="position:relative">
+              <pre id="drive-script-code" style="background:#1e1e2e;color:#cdd6f4;font-size:10px;padding:10px 12px;border-radius:6px;overflow-x:auto;white-space:pre;margin:0;line-height:1.5">${`// ── Agrega esto dentro de tu función doPost(e) ──────────────────
+if (data.action === 'saveDriveFile') {
+  var folderName = data.folder || 'Indicadores_Dusakawi_EPS';
+  var it = DriveApp.getFoldersByName(folderName);
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
+  // Reemplazar archivo previo del mismo día
+  var old = folder.getFilesByName(data.filename);
+  while (old.hasNext()) old.next().setTrashed(true);
+  // Guardar CSV
+  folder.createFile(Utilities.newBlob(data.content, 'text/csv', data.filename));
+  return ContentService
+    .createTextOutput(JSON.stringify({ok:true}))
+    .setMimeType(ContentService.MimeType.JSON);
+}`}</pre>
+              <button onclick="(()=>{const t=document.getElementById('drive-script-code');navigator.clipboard.writeText(t.innerText).then(()=>APP._toast('📋 Código copiado','success'))})()"
+                style="position:absolute;top:6px;right:6px;font-size:10px;padding:3px 8px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer">
+                📋 Copiar
+              </button>
+            </div>
+            <p style="font-size:10px;color:#888;margin:8px 0 0">
+              Después de pegar el código: <b>Implementar → Nueva implementación → Aplicación web → Ejecutar como: Yo → Acceso: Cualquier persona</b>
+            </p>
+          </div>
         </div>
 
         <!-- ── COMPARTIR DATOS CON COMPAÑEROS ── -->
@@ -4122,6 +4188,8 @@ const APP = (() => {
   }
 
   return {
+    _toast: toast,
+
     mostrarCruceRes202: () => {
       const el = document.getElementById('res202-cruce-result');
       if (!el) return;
