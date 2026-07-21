@@ -698,11 +698,18 @@ const APP = (() => {
         folder: 'Indicadores_Dusakawi_EPS',
         source: sourceKey,
       });
-      await fetch(gscriptUrl, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: payload });
-      toast(`✅ ${filename} guardado en Google Drive`, 'success');
+      const resp = await fetch(gscriptUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body: payload });
+      let result = {};
+      try { result = await resp.json(); } catch(_) {}
+      if (result.ok === false) {
+        toast(`❌ Drive error: ${result.error || 'sin detalle'}`, 'error');
+        exportCSV(rows, filename);
+      } else {
+        toast(`✅ ${filename} guardado en Google Drive`, 'success');
+      }
     } catch(e) {
       exportCSV(rows, filename);
-      toast(`⚠️ Error al subir a Drive — descargado localmente`, 'info');
+      toast(`⚠️ ${e.message || 'Error de red'} — descargado localmente`, 'info');
     }
   }
 
