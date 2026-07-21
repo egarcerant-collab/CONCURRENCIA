@@ -3834,37 +3834,9 @@ const APP = (() => {
           </div>
           <div id="gscript-status" style="font-size:11px;color:#888;margin-top:6px"></div>
 
-          <!-- Subpanel: guardar auxiliares en Drive -->
-          <div style="margin-top:12px;padding:10px 14px;background:#fff8e1;border:1px solid #f9a825;border-radius:8px">
-            <div style="font-size:12px;font-weight:700;color:#6d4c00;margin-bottom:6px">📂 Guardar archivos auxiliares en Google Drive</div>
-            <p style="font-size:11px;color:#555;margin:0 0 8px">
-              Al cargar RCV, AIU, DNT, CyD, Estancia, PyP o Res202, la app sube automáticamente un CSV procesado
-              a la carpeta <b>Indicadores_Dusakawi_EPS</b> en tu Drive.<br>
-              Para activarlo, agrega este bloque al <code>doPost</code> de tu Apps Script y re-despliega:
-            </p>
-            <div style="position:relative">
-              <pre id="drive-script-code" style="background:#1e1e2e;color:#cdd6f4;font-size:10px;padding:10px 12px;border-radius:6px;overflow-x:auto;white-space:pre;margin:0;line-height:1.5">${`// ── Agrega esto dentro de tu función doPost(e) ──────────────────
-if (data.action === 'saveDriveFile') {
-  var folderName = data.folder || 'Indicadores_Dusakawi_EPS';
-  var it = DriveApp.getFoldersByName(folderName);
-  var folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
-  // Reemplazar archivo previo del mismo día
-  var old = folder.getFilesByName(data.filename);
-  while (old.hasNext()) old.next().setTrashed(true);
-  // Guardar CSV
-  folder.createFile(Utilities.newBlob(data.content, 'text/csv', data.filename));
-  return ContentService
-    .createTextOutput(JSON.stringify({ok:true}))
-    .setMimeType(ContentService.MimeType.JSON);
-}`}</pre>
-              <button onclick="(()=>{const t=document.getElementById('drive-script-code');navigator.clipboard.writeText(t.innerText).then(()=>APP._toast('📋 Código copiado','success'))})()"
-                style="position:absolute;top:6px;right:6px;font-size:10px;padding:3px 8px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer">
-                📋 Copiar
-              </button>
-            </div>
-            <p style="font-size:10px;color:#888;margin:8px 0 0">
-              Después de pegar el código: <b>Implementar → Nueva implementación → Aplicación web → Ejecutar como: Yo → Acceso: Cualquier persona</b>
-            </p>
+          <div style="margin-top:10px;font-size:11px;color:#555;background:#e8f5e9;border-radius:6px;padding:8px 12px;border:1px solid #a5d6a7">
+            📂 Los archivos auxiliares (RCV, AIU, DNT, etc.) se guardan automáticamente en Google Drive
+            → carpeta <b>Indicadores_Dusakawi_EPS</b> al subirlos.
           </div>
         </div>
 
