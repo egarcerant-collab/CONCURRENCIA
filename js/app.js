@@ -642,6 +642,23 @@ const APP = (() => {
     });
   }
 
+  // Exporta rows como CSV descargable (BOM UTF-8 para compatibilidad con Excel en español)
+  function exportCSV(rows, filename) {
+    if (!rows || !rows.length) return;
+    const headers = Object.keys(rows[0]);
+    const esc = v => {
+      const s = String(v == null ? '' : v);
+      return s.includes(';') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s;
+    };
+    const lines = [headers.map(esc).join(';')];
+    for (const r of rows) lines.push(headers.map(h => esc(r[h])).join(';'));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
   // Detecta si un archivo es PyP por nombre (informe_4505 o variantes)
   function esPyPFilename(name) {
     return /4505|informe_4505|pyp.*3280|3280.*pyp/i.test(name||'');
@@ -860,6 +877,13 @@ const APP = (() => {
           }
         } else {
           toast(`✅ ${src?.label||sourceKey}: ${fmtN(rows.length)} registros cargados ✔`,'success');
+        }
+        // Auto-exportar CSV procesado para guardar en Google Drive
+        if (sourceKey !== 'detallado') {
+          const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+          const baseName = sourceKey.toUpperCase();
+          exportCSV(rows, `${baseName}_procesado_${today}.csv`);
+          setTimeout(() => toast(`📥 ${baseName}_procesado_${today}.csv descargado — arrástralo a Google Drive para guardarlo permanentemente`, 'info'), 600);
         }
         const meta = sourceKey === 'detallado'
           ? { source: 'manual-upload', tipoReporte: 1 }
