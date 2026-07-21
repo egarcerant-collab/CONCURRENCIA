@@ -666,46 +666,37 @@ const APP = (() => {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  function getDriveFolderId() {
-    try {
-      const raw = localStorage.getItem('drive_folder_id') || '';
-      // Acepta URL completa o solo el ID
-      const m = raw.match(/folders\/([a-zA-Z0-9_-]{10,})/);
-      return m ? m[1] : raw.trim();
-    } catch(e) { return ''; }
-  }
-
-  // Sube CSV a Google Drive via Apps Script — si no hay script configurado, descarga localmente
+  // Sube archivo a Google Drive via el servidor propio (/api/gdrive-write)
+  // Sin CORS, sin Apps Script, sin tokens de usuario — usa Service Account en el servidor
   async function uploadFileToDrive(rows, sourceKey) {
-    const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    const today    = new Date().toISOString().slice(0,10).replace(/-/g,'');
     const filename = `${sourceKey.toUpperCase()}_procesado_${today}.csv`;
-    const gscriptUrl = (() => { try { return localStorage.getItem('gscript_url')||''; } catch(e){ return ''; } })();
-
-    if (!gscriptUrl) {
-      exportCSV(rows, filename);
-      toast(`📥 ${filename} descargado — configura el Apps Script para subir a Drive`, 'info');
-      return;
-    }
 
     try {
-      const csvContent = buildCSV(rows);
-      const folderId = getDriveFolderId();
-      const payload = JSON.stringify({
-        action: 'saveDriveFile',
-        filename,
-        content: csvContent,
-        folderId: folderId || '',
-        folder: 'Indicadores_Dusakawi_EPS',
-        source: sourceKey,
-      });
-      const resp = await fetch(gscriptUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body: payload });
-      let result = {};
-      try { result = await resp.json(); } catch(_) {}
-      if (result.ok === false) {
-        toast(`❌ Drive error: ${result.error || 'sin detalle'}`, 'error');
+      // Verificar si el servidor tiene Drive configurado
+      const statusResp = await fetch('/api/gdrive-status').catch(()=>null);
+      const status = statusResp?.ok ? await statusResp.json().catch(()=>({})) : {};
+
+      if (!status.configured) {
+        // Sin service account → descarga local como respaldo
         exportCSV(rows, filename);
-      } else {
+        toast(`📥 ${filename} descargado localmente (Drive no configurado)`, 'info');
+        return;
+      }
+
+      toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Google Drive…`, 'info');
+      const csvContent = buildCSV(rows);
+      const resp = await fetch('/api/gdrive-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: filename, content: csvContent, mimeType: 'text/csv' }),
+      });
+      const result = await resp.json().catch(()=>({}));
+      if (result.ok) {
         toast(`✅ ${filename} guardado en Google Drive`, 'success');
+      } else {
+        toast(`❌ Drive: ${result.error || 'Error desconocido'}`, 'error');
+        exportCSV(rows, filename);
       }
     } catch(e) {
       exportCSV(rows, filename);
@@ -1020,9 +1011,9 @@ const APP = (() => {
   }
 
   let _lastLoad = 0;
-  const IDB_MAX_AGE_MS = 23 * 60 * 60 * 1000;
+  const IDB_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 días — evita caer en GSheets con datos viejos
 
-  // Cascada: IDB (cache 23h) → GitHub Gist → Google Sheets → IDB (viejo) → localStorage
+  // Cascada: IDB (cache 7d) → GitHub Gist → Google Sheets → IDB (viejo) → localStorage
   async function loadSaved(silencioso = false, forzarNube = false) {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP', res202:'RES202'};
 
@@ -1161,7 +1152,8 @@ const APP = (() => {
       setTimeout(async () => {
         try {
           const gs = await window.SUPA_DB.gSheetsDownload();
-          if (gs?.rows?.length > state.rows.length) {
+          const gsColsOk = gs?.rows?.length && Object.keys(gs.rows[0]).some(k => normCol(k) === 'direccion');
+          if (gsColsOk && gs.rows.length > state.rows.length) {
             console.info(`[GSheets] Datos más recientes: ${gs.rows.length} vs ${state.rows.length} filas actuales`);
             state.rows = gs.rows;
             state.fileNames.detallado = gs.fileName || 'Google Sheets';
@@ -3865,47 +3857,26 @@ const APP = (() => {
         </div>
       </div>
 
-      <!-- ── GOOGLE DRIVE ── -->
+      <!-- ── GOOGLE DRIVE — Service Account ── -->
       <div class="upload-section" style="border:2px solid #34a853;background:linear-gradient(135deg,#e8f5e9,#fff);margin-bottom:20px">
-        <h3 style="color:#1b5e20;margin:0 0 8px">📂 Google Drive — Carpeta de Archivos</h3>
-        <p style="font-size:12px;color:#555;margin:0 0 14px">
-          Carga archivos directamente desde la carpeta de Google Drive compartida.
-          Los archivos deben estar compartidos con "Cualquiera con el enlace puede ver".
-        </p>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-          <a href="https://drive.google.com/drive/folders/1dQ6bSoBz3IWXksHG_LQG6cG4xgfgVJgV?usp=sharing"
+        <h3 style="color:#1b5e20;margin:0 0 8px">📂 Google Drive — Almacenamiento de Archivos</h3>
+        <div id="gdrive-admin-status" style="padding:10px 14px;border-radius:8px;background:#f5f5f5;border:1px solid #ddd;font-size:12px;margin-bottom:14px">
+          ⏳ Verificando conexión con Google Drive…
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <button onclick="APP.listarDriveAdmin()"
+            style="padding:8px 18px;background:#34a853;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
+            🔄 Ver archivos en Drive
+          </button>
+          <a href="https://drive.google.com/drive/folders/1GvJuv9M4tssWIKwI9gA5TyUqFLigLIQc"
             target="_blank" rel="noopener"
-            style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#34a853;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">
-            🔗 Abrir carpeta en Drive
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#1b5e20;color:#fff;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">
+            🔗 Abrir carpeta 202
           </a>
-          <span style="font-size:11px;color:#888">Carpeta: Dirección del Riesgo · Dusakawi</span>
         </div>
-        <div style="background:#fff;border:1px solid #c8e6c9;border-radius:10px;padding:14px;margin-bottom:14px">
-          <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:10px">
-            📥 Cargar archivo desde URL de Google Drive
-          </div>
-          <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;margin-bottom:8px">
-            <input id="drive-url-input" type="text" placeholder="Pega aquí el link de compartir de Google Drive (drive.google.com/...)"
-              style="padding:8px 12px;border:1.5px solid #c8e6c9;border-radius:8px;font-size:12px;outline:none;width:100%">
-            <select id="drive-source-key" style="padding:8px;border:1.5px solid #c8e6c9;border-radius:8px;font-size:12px;color:#333">
-              <option value="detallado">📊 DETALLADO</option>
-              <option value="pyp">🩺 PyP Res. 3280</option>
-              <option value="rcv">❤️ RCV</option>
-              <option value="aiu">🚑 AIU</option>
-              <option value="dnt">🍽️ DNT</option>
-              <option value="cyd">🌱 CyD</option>
-              <option value="estancia">🛏️ Estancia</option>
-              <option value="res202">📄 Res. 202</option>
-            </select>
-            <button onclick="APP.cargarDesdeDrive()"
-              style="padding:8px 18px;background:#34a853;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">
-              ⬇️ Cargar
-            </button>
-          </div>
-          <div id="drive-load-status" style="font-size:11px;color:#888;min-height:16px"></div>
-        </div>
+        <div id="gdrive-files-list" style="font-size:12px;color:#555"></div>
         <div style="font-size:11px;color:#777;background:#f1f8e9;border-radius:8px;padding:8px 12px;border-left:3px solid #aed581">
-          <b>Cómo obtener el link:</b> En Drive, clic derecho sobre el archivo → Compartir → "Cualquiera con el enlace puede ver" → Copiar enlace → Pegar aquí.
+          <b>Sin configuración manual:</b> Drive funciona automáticamente vía Service Account. Los archivos se escriben y reescriben al usar ☁️ Subir a Drive en cada fuente.
         </div>
       </div>
 
@@ -3936,8 +3907,11 @@ const APP = (() => {
           ${state.res202Rows.length ? kpi('Res. 202',fmtN(state.res202Rows.length),'registros',state.fileNames.res202||'','orange','📄') : ''}
         </div>
       </div>` : ''}`;
-    // Cargar estado IDB después de pintar el panel
-    setTimeout(() => APP.idbRefresh && APP.idbRefresh(), 200);
+    // Cargar estado IDB y verificar Drive al abrir el panel
+    setTimeout(() => {
+      APP.idbRefresh && APP.idbRefresh();
+      APP.gdriveAdminCheck && APP.gdriveAdminCheck();
+    }, 200);
   }
 
   function datos() {
@@ -4805,6 +4779,52 @@ const APP = (() => {
       } catch(e) {
         const box = document.getElementById('drive-status-box');
         if (box) box.innerHTML = '<span style="color:#888">ℹ️ Servidor local no disponible (solo en modo local).</span>';
+      }
+    },
+    // Verifica service account y actualiza el panel admin
+    gdriveAdminCheck: async () => {
+      const box = document.getElementById('gdrive-admin-status');
+      if (!box) return;
+      try {
+        const r = await fetch('/api/gdrive-status').then(x=>x.json()).catch(()=>({}));
+        if (r.configured) {
+          box.style.background = '#e8f5e9';
+          box.style.border = '1px solid #a5d6a7';
+          box.innerHTML = `✅ <b>Service Account configurado</b> — Drive listo para escribir/leer archivos sin intervención manual.<br>
+            <span style="font-size:10px;color:#555">Carpeta: <code>${r.folderId}</code></span>`;
+        } else {
+          box.style.background = '#fff3e0';
+          box.style.border = '1px solid #ff9800';
+          box.innerHTML = `⚠️ <b>Drive no configurado</b> — Agrega la variable <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> en Vercel.<br>
+            <span style="font-size:10px;color:#777">Sin esta variable, los archivos se descargan localmente al hacer ☁️ Subir a Drive.</span>`;
+        }
+      } catch(e) {
+        box.innerHTML = '⚠️ No se pudo verificar el estado de Drive.';
+      }
+    },
+    // Lista archivos en la carpeta Drive del panel admin
+    listarDriveAdmin: async () => {
+      const list = document.getElementById('gdrive-files-list');
+      if (!list) return;
+      list.innerHTML = '<span style="color:#888">⏳ Cargando lista de archivos…</span>';
+      try {
+        const r = await fetch('/api/gdrive-list').then(x=>x.json()).catch(()=>({}));
+        if (!r.ok) {
+          list.innerHTML = `<span style="color:#e74c3c">❌ ${r.error||'No se pudo listar archivos. Configura GOOGLE_SERVICE_ACCOUNT_JSON.'}</span>`;
+          return;
+        }
+        if (!r.files.length) { list.innerHTML = '<span style="color:#888">Carpeta vacía.</span>'; return; }
+        const rows = r.files.map(f => {
+          const kb = f.size ? `${Math.round(f.size/1024)} KB` : '';
+          const dt = f.modifiedTime ? new Date(f.modifiedTime).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+          return `<tr><td style="font-family:monospace;font-size:11px">${f.name}</td><td style="font-size:11px;color:#888">${kb}</td><td style="font-size:11px;color:#888">${dt}</td></tr>`;
+        }).join('');
+        list.innerHTML = `<table style="width:100%;border-collapse:collapse;margin-top:8px">
+          <thead><tr><th style="text-align:left;font-size:11px;color:#666;padding:4px 8px">Archivo</th><th style="font-size:11px;color:#666;padding:4px 8px">Tamaño</th><th style="font-size:11px;color:#666;padding:4px 8px">Modificado</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      } catch(e) {
+        list.innerHTML = `<span style="color:#e74c3c">❌ Error: ${e.message}</span>`;
       }
     },
     driveSync: async (force=false) => {
