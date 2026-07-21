@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["server.js"],
       "port": 3002
+    },
+    {
+      "name": "cruce-eda-ira",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const h=require('http'),fs=require('fs'),p=require('path');h.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html;charset=utf-8'});res.end(fs.readFileSync(p.join(__dirname,'cruce_eda_ira_pyp.html')));}).listen(5501,()=>console.log('ok'));"],
+      "port": 5501
     }
   ]
 }

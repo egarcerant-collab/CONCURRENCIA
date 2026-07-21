@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Cruce EDA / IRA × PyP — Dusakawi EPS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}
+.hdr{background:#1a4f7a;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:14px}
+.hdr h1{font-size:17px;font-weight:700}
+.hdr p{font-size:12px;opacity:.75;margin-top:2px}
+.hdr .tag{margin-left:auto;background:rgba(255,255,255,.15);padding:4px 12px;border-radius:20px;font-size:11px}
+.main{max-width:1400px;margin:0 auto;padding:24px}
+.card{background:#fff;border-radius:12px;padding:20px 24px;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+.step{width:26px;height:26px;border-radius:50%;background:#1a4f7a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-right:8px;flex-shrink:0}
+.zone{border:2px dashed #ccc;border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:.2s}
+.zone:hover,.zone.over{border-color:#1a4f7a;background:#ebf5fb}
+.zone.ok{border-color:#27ae60;background:#eafaf1;border-style:solid}
+.zone .ico{font-size:32px;margin-bottom:8px}
+.zone .lbl{font-size:13px;font-weight:600;color:#333}
+.zone .sub{font-size:11px;color:#aaa;margin-top:4px}
+.info-ok{font-size:12px;color:#27ae60;margin-top:8px;display:none}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.scard{background:#f8f9fa;border-radius:10px;padding:14px;text-align:center}
+.scard .val{font-size:28px;font-weight:700;line-height:1.1}
+.scard .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;margin-top:3px}
+.scard .sub{font-size:11px;color:#aaa;margin-top:2px}
+.pbar{height:6px;background:#e0e0e0;border-radius:3px;margin-top:5px;overflow:hidden}
+.pfill{height:100%;border-radius:3px}
+
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.filters select,.filters input{padding:7px 11px;border:1px solid #ddd;border-radius:8px;font-size:12px;background:#fff;outline:none}
+.filters select:focus,.filters input:focus{border-color:#1a4f7a}
+.filters input{flex:1;min-width:200px}
+
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{background:#f0f2f5;padding:9px 11px;text-align:left;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#555;border-bottom:2px solid #e0e0e0;white-space:nowrap;position:sticky;top:0;z-index:1}
+td{padding:8px 11px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
+tr:hover td{background:#fafafa}
+
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10.5px;font-weight:600}
+.b-eda{background:#fff3e0;color:#e65100}
+.b-ira{background:#e3f2fd;color:#0d47a1}
+.b-si{background:#e8f5e9;color:#1b5e20}
+.b-no{background:#fce4ec;color:#880e4f}
+.b-warn{background:#fff9c4;color:#f57f17}
+
+.btn{padding:10px 22px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:.18s}
+.btn-prim{background:#1a4f7a;color:#fff}
+.btn-prim:hover{background:#154060}
+.btn-prim:disabled{opacity:.4;cursor:not-allowed}
+.btn-green{background:#27ae60;color:#fff}
+.btn-green:hover{background:#1e8449}
+.btn-lg{padding:13px 36px;font-size:15px;border-radius:12px}
+
+.toast{position:fixed;bottom:22px;right:22px;padding:11px 20px;border-radius:8px;color:#fff;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
+.toast.show{opacity:1}
+
+.imc-chip{display:inline-block;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}
+.tbl-wrap{overflow-x:auto;max-height:520px;overflow-y:auto}
+.sec-title{font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div style="font-size:24px">🔄</div>
+  <div>
+    <h1>Cruce EDA / IRA × PyP Resolución 4505</h1>
+    <p>Dusakawi EPS · Dirección del Riesgo · Sin conexión requerida</p>
+  </div>
+  <div class="tag">100% local — sin Supabase</div>
+</div>
+
+<div class="main">
+
+  <!-- PASO 1 y 2 -->
+  <div class="grid2">
+    <div class="card">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <span class="step">1</span>
+        <div>
+          <div style="font-size:14px;font-weight:700">Datos de hospitalización</div>
+          <div style="font-size:11px;color:#888">DETALLADO_AUDITORIA.xlsx · .xls · .json</div>
+        </div>
+      </div>
+      <div class="zone" id="zone1" onclick="document.getElementById('f1').click()">
+        <div class="ico">📊</div>
+        <div class="lbl">Clic o arrastra el archivo</div>
+        <div class="sub">Excel exportado del sistema o JSON</div>
+      </div>
+      <input type="file" id="f1" accept=".xlsx,.xls,.json" style="display:none">
+      <div class="info-ok" id="ok1"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <span class="step">2</span>
+        <div>
+          <div style="font-size:14px;font-weight:700">Informe PyP / Res. 4505</div>
+          <div style="font-size:11px;color:#888">JSON del convertor · .txt pipe-delimited original</div>
+        </div>
+      </div>
+      <div class="zone" id="zone2" onclick="document.getElementById('f2').click()">
+        <div class="ico">💊</div>
+        <div class="lbl">Clic o arrastra el archivo</div>
+        <div class="sub">informe_4505_Consolidado.json · .txt</div>
+      </div>
+      <input type="file" id="f2" accept=".json,.txt" style="display:none">
+      <div class="info-ok" id="ok2"></div>
+    </div>
+  </div>
+
+  <!-- BOTÓN CRUZAR -->
+  <div style="text-align:center;margin-bottom:28px">
+    <button class="btn btn-prim btn-lg" id="btnCruzar" onclick="cruzar()" disabled>
+      🔄 Ejecutar cruce EDA/IRA × PyP
+    </button>
+    <div style="font-size:11px;color:#aaa;margin-top:8px" id="msgCruzar">Carga ambos archivos para habilitar el cruce</div>
+  </div>
+
+  <!-- RESULTADOS -->
+  <div id="resultados" style="display:none">
+
+    <div class="card">
+      <div class="sec-title" style="color:#e65100">🤢 EDA — Enfermedad Diarreica Aguda <span style="font-size:11px;color:#aaa;font-weight:400">(CIE-10: A00–A09)</span></div>
+      <div class="stats-grid" id="sEDA"></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-title" style="color:#0d47a1">🫁 IRA — Infección Respiratoria Aguda <span style="font-size:11px;color:#aaa;font-weight:400">(CIE-10: J00–J22)</span></div>
+      <div class="stats-grid" id="sIRA"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:15px;font-weight:700" id="lblTabla">Registros</div>
+        <button class="btn btn-green" onclick="exportar()">⬇️ Exportar Excel</button>
+      </div>
+
+      <div class="filters">
+        <select id="fTipo" onchange="filtrar()">
+          <option value="">EDA + IRA</option>
+          <option value="EDA">Solo EDA</option>
+          <option value="IRA">Solo IRA</option>
+        </select>
+        <select id="fCruce" onchange="filtrar()">
+          <option value="">Todos</option>
+          <option value="1">Con cruce PyP ✅</option>
+          <option value="0">Sin cruce PyP ❌</option>
+        </select>
+        <select id="fIPS" onchange="filtrar()"><option value="">Todas las IPS</option></select>
+        <select id="fSexo" onchange="filtrar()">
+          <option value="">Ambos sexos</option>
+          <option value="F">Femenino</option>
+          <option value="M">Masculino</option>
+        </select>
+        <input id="fBusq" type="text" placeholder="🔍 Buscar documento o nombre..." oninput="filtrar()">
+        <span id="cntFilt" style="font-size:11px;color:#888;white-space:nowrap"></span>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Documento</th>
+              <th>Paciente</th>
+              <th>IPS</th>
+              <th>Ingreso</th>
+              <th>Egreso</th>
+              <th>CIE-10</th>
+              <th>Edad</th>
+              <th>Sx</th>
+              <th>En PyP</th>
+              <th>Gest.</th>
+              <th>Peso</th>
+              <th>Talla</th>
+              <th>IMC</th>
+              <th>R.Nutri</th>
+              <th>Estado PyP</th>
+              <th>Próx.Control</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+// ── Estado ────────────────────────────────────────────────────
+let DET   = null;   // rows[] hospitalización
+let PYP   = null;   // Map doc→registro
+let RES   = [];     // resultado cruce
+let FILT  = [];     // filtrado actual
+
+// ── CIE-10 ────────────────────────────────────────────────────
+const isEDA = c => /^A0[0-9]/i.test(String(c||'').trim());
+const isIRA = c => {
+  const s = String(c||'').trim().toUpperCase();
+  if (!/^J/.test(s)) return false;
+  const n = parseInt(s.replace(/\D/g,''));
+  return n >= 0 && n <= 229;
+};
+
+// ── Normalizar documento ──────────────────────────────────────
+const normDoc = v => String(v||'').trim().replace(/\s+/g,'');
+
+// ── Obtener campo flexible ────────────────────────────────────
+function gf(obj,...keys){
+  for(const k of keys){
+    if(obj[k]!==undefined&&obj[k]!==null&&obj[k]!=='') return obj[k];
+    const kl=Object.keys(obj).find(ok=>ok.toLowerCase().replace(/[^a-z0-9]/g,'')===k.toLowerCase().replace(/[^a-z0-9]/g,''));
+    if(kl&&obj[kl]!==undefined&&obj[kl]!==null&&obj[kl]!=='') return obj[kl];
+  }
+  return '';
+}
+
+// ── Cargar archivo 1: DETALLADO ───────────────────────────────
+document.getElementById('f1').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  toast('Cargando '+f.name+'…','#1a4f7a');
+  try{
+    if(f.name.toLowerCase().endsWith('.json')){
+      const p=JSON.parse(await f.text());
+      DET=Array.isArray(p)?p:(p.rows||p.data||[]);
+    } else {
+      const ab=await f.arrayBuffer();
+      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:true});
+      let sn=wb.SheetNames[0];
+      if(wb.SheetNames.includes('POWEBI')) sn='POWEBI';
+      else if(wb.SheetNames.includes('DATOS')) sn='DATOS';
+      DET=XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''});
+    }
+    markOk('zone1','ok1',`✅ ${DET.length.toLocaleString('es-CO')} registros — ${f.name}`);
+    checkReady();
+    toast('Hospitalización cargada: '+DET.length.toLocaleString('es-CO'),'#27ae60');
+  }catch(err){toast('Error: '+err.message,'#e74c3c');}
+});
+
+// ── Cargar archivo 2: PyP / R4505 ────────────────────────────
+document.getElementById('f2').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  toast('Indexando PyP…','#1a4f7a');
+  try{
+    PYP={};
+    if(f.name.toLowerCase().endsWith('.json')){
+      const p=JSON.parse(await f.text());
+      const rows=Array.isArray(p)?p:(p.data||p.rows||[]);
+      rows.forEach(r=>{
+        const d=normDoc(r.numero_documento||r['Numero Identificacion']||'');
+        if(d) PYP[d]=r;
+      });
+    } else {
+      // TXT pipe-delimited raw 4505
+      const txt=await f.text();
+      txt.split('\n').forEach(line=>{
+        const c=line.trim().split('|');
+        if(c.length<15||c[0].trim()!=='2') return;
+        const d=normDoc(c[4]);
+        if(!d) return;
+        const nd=(v,i)=>(v===undefined||v==='1800-01-01'||v==='1845-01-01')?null:v;
+        PYP[d]={
+          numero_documento:c[4], tipo_documento:c[3],
+          primer_apellido:c[5],  segundo_apellido:c[6],
+          primer_nombre:c[7],    segundo_nombre:c[8],
+          fecha_nacimiento:c[9], sexo:c[10], codigo_ips:c[2],
+          clasificacion_poblacional:c[11], codigo_municipio:c[12],
+          ind_riesgo_nutricional:c[57]||null,
+          peso_kg:c[30]||null, talla_cm:c[32]||null, imc:c[34]||null,
+          estado_indicador:parseInt(c[114])||0,
+          estado_indicador_desc:decEst(parseInt(c[114])),
+          fecha_proximo_control:nd(c[118]),
+          ind_crecimiento:c[20], ind_embarazo:c[23], ind_vacunacion:c[35],
+          ind_riesgo_cv:c[14], ind_hta:c[36], ind_dm2:c[37],
+        };
+      });
+    }
+    const n=Object.keys(PYP).length;
+    markOk('zone2','ok2',`✅ ${n.toLocaleString('es-CO')} registros PyP indexados`);
+    checkReady();
+    toast('PyP indexado: '+n.toLocaleString('es-CO'),'#27ae60');
+  }catch(err){toast('Error: '+err.message,'#e74c3c');}
+});
+
+function decEst(n){
+  return({0:'No cumple',1:'Cumple',2:'Parcial',3:'En proceso',4:'No aplica',
+          5:'Con resultado',6:'Programado',21:'Sin programar',98:'Sin info',999:'Sin dato'})[n]||String(n||'');
+}
+
+// ── Drag & drop para ambas zonas ──────────────────────────────
+[['zone1','f1'],['zone2','f2']].forEach(([zid,fid])=>{
+  const z=document.getElementById(zid), inp=document.getElementById(fid);
+  z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over');});
+  z.addEventListener('dragleave',()=>z.classList.remove('over'));
+  z.addEventListener('drop',e=>{
+    e.preventDefault(); z.classList.remove('over');
+    const f=e.dataTransfer.files[0];
+    if(f){const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;inp.dispatchEvent(new Event('change'));}
+  });
+});
+
+function checkReady(){
+  const ok=!!(DET&&PYP);
+  document.getElementById('btnCruzar').disabled=!ok;
+  document.getElementById('msgCruzar').textContent=ok?'✅ Listo para cruzar':'Carga ambos archivos para habilitar el cruce';
+}
+function markOk(zid,oid,msg){
+  document.getElementById(zid).classList.add('ok');
+  const el=document.getElementById(oid); el.textContent=msg; el.style.display='block';
+}
+
+// ── CRUCE ─────────────────────────────────────────────────────
+function cruzar(){
+  toast('Cruzando…','#1a4f7a');
+  RES=[];
+  const ipsSet=new Set();
+
+  DET.forEach(row=>{
+    const cie=String(gf(row,'Cie10 Diagnostico','cie10_diagnostico','Cie10Diagnostico','CIE10','Cie10','Diagnostico')||'').toUpperCase().trim();
+    const tipo=isEDA(cie)?'EDA':isIRA(cie)?'IRA':null;
+    if(!tipo) return;
+
+    const doc=normDoc(gf(row,'Numero Identificacion','NumeroIdentificacion','numero_identificacion','Documento','NroDoc','No Identificacion'));
+    const pyp=doc?(PYP[doc]||PYP[doc.replace(/^0+/,'')]||null):null;
+
+    const ips=String(gf(row,'IPS','Ips','NombreIPS','nombre_ips')||'').trim();
+    if(ips) ipsSet.add(ips);
+
+    const imc=pyp?parseFloat(pyp.imc)||null:null;
+    let imcLbl='', imcBg='';
+    if(imc){
+      if(imc<16)    {imcLbl='Desnutrición III';imcBg='#b71c1c';}
+      else if(imc<17)   {imcLbl='Desnutrición II';imcBg='#c62828';}
+      else if(imc<18.5) {imcLbl='Bajo peso';imcBg='#e3f2fd';}
+      else if(imc<25)   {imcLbl='Normal';imcBg='#e8f5e9';}
+      else if(imc<30)   {imcLbl='Sobrepeso';imcBg='#fff9c4';}
+      else if(imc<35)   {imcLbl='Obesidad I';imcBg='#ffe0b2';}
+      else if(imc<40)   {imcLbl='Obesidad II';imcBg='#ffccbc';}
+      else              {imcLbl='Obesidad III';imcBg='#fce4ec';}
+    }
+
+    const nutriV=pyp?parseInt(pyp.ind_riesgo_nutricional)||0:null;
+    const nutriAlert=nutriV!==null&&nutriV!==0&&nutriV!==21&&nutriV!==4&&nutriV!==998;
+
+    RES.push({
+      tipo, doc,
+      nombre:String(gf(row,'Nombre Paciente','nombre_paciente','NombrePaciente')||'').trim(),
+      ips,
+      ingreso:gf(row,'Fecha Ingreso','FechaIngreso','fecha_ingreso'),
+      egreso:gf(row,'Fecha Egreso','FechaEgreso','fecha_egreso'),
+      cie, diagnostico:String(gf(row,'Diagnostico','diagnostico')||'').trim(),
+      edad:gf(row,'Edad','edad'),
+      sexo:String(gf(row,'Sexo','sexo')||'').toUpperCase().trim(),
+      gestacion:gf(row,'Gestacion','gestacion','Gestación'),
+      cruzado:!!pyp, pyp,
+      imc, imcLbl, imcBg, nutriV, nutriAlert,
+    });
+  });
+
+  // Poblar filtro IPS
+  const sel=document.getElementById('fIPS');
+  sel.innerHTML='<option value="">Todas las IPS</option>';
+  [...ipsSet].sort().forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=i;sel.appendChild(o);});
+
+  mostrar();
+  toast(`Cruce listo: ${RES.filter(r=>r.tipo==='EDA').length} EDA · ${RES.filter(r=>r.tipo==='IRA').length} IRA`,'#27ae60');
+}
+
+// ── MOSTRAR RESULTADOS ────────────────────────────────────────
+function mostrar(){
+  document.getElementById('resultados').style.display='block';
+  renderStats('sEDA','EDA','#e65100');
+  renderStats('sIRA','IRA','#0d47a1');
+  filtrar();
+}
+
+function renderStats(id,tipo,color){
+  const rows=RES.filter(r=>r.tipo===tipo);
+  const crz=rows.filter(r=>r.cruzado).length;
+  const pct=rows.length?((crz/rows.length)*100).toFixed(1):0;
+  const gestP=rows.filter(r=>r.cruzado&&(String(r.gestacion||'').toLowerCase().includes('si')||String(r.gestacion||'').trim()==='1')).length;
+  const nutriA=rows.filter(r=>r.nutriAlert).length;
+  document.getElementById(id).innerHTML=`
+    <div class="scard"><div class="val" style="color:${color}">${rows.length.toLocaleString('es-CO')}</div><div class="lbl">Total casos</div></div>
+    <div class="scard">
+      <div class="val" style="color:#27ae60">${crz.toLocaleString('es-CO')}</div>
+      <div class="lbl">Con registro PyP</div><div class="sub">${pct}% cobertura</div>
+      <div class="pbar"><div class="pfill" style="width:${pct}%;background:#27ae60"></div></div>
+    </div>
+    <div class="scard"><div class="val" style="color:#e74c3c">${(rows.length-crz).toLocaleString('es-CO')}</div><div class="lbl">Sin registro PyP</div><div class="sub">${(100-pct).toFixed(1)}%</div></div>
+    <div class="scard"><div class="val" style="color:#8e44ad">${gestP}</div><div class="lbl">Gestantes</div></div>
+    <div class="scard"><div class="val" style="color:#f39c12">${nutriA}</div><div class="lbl">R.Nutricional alerta</div></div>
+  `;
+}
+
+// ── FILTRAR ───────────────────────────────────────────────────
+function filtrar(){
+  const t=document.getElementById('fTipo').value;
+  const c=document.getElementById('fCruce').value;
+  const ip=document.getElementById('fIPS').value;
+  const sx=document.getElementById('fSexo').value;
+  const bq=document.getElementById('fBusq').value.toLowerCase().trim();
+
+  FILT=RES.filter(r=>{
+    if(t&&r.tipo!==t) return false;
+    if(c==='1'&&!r.cruzado) return false;
+    if(c==='0'&&r.cruzado) return false;
+    if(ip&&r.ips!==ip) return false;
+    if(sx&&r.sexo!==sx) return false;
+    if(bq&&!r.doc.toLowerCase().includes(bq)&&!r.nombre.toLowerCase().includes(bq)) return false;
+    return true;
+  });
+
+  document.getElementById('lblTabla').textContent=`${FILT.length.toLocaleString('es-CO')} registros`;
+  document.getElementById('cntFilt').textContent=FILT.length!==RES.length?`de ${RES.length.toLocaleString('es-CO')} total`:'';
+  renderTbl();
+}
+
+// ── TABLA ─────────────────────────────────────────────────────
+function renderTbl(){
+  const PAGE=600;
+  const rows=FILT.slice(0,PAGE);
+  const tbody=document.getElementById('tbody');
+
+  tbody.innerHTML=rows.map(r=>{
+    const imcH=r.imc
+      ?`<span class="imc-chip" style="background:${r.imcBg};color:#333">${r.imc.toFixed(1)}<br><span style="font-size:9px">${r.imcLbl}</span></span>`
+      :'—';
+    const nR=r.nutriAlert
+      ?`<span class="badge b-warn">${r.nutriV}</span>`:'—';
+    const pypSt=r.pyp?`<span style="font-size:10.5px;color:#333">${r.pyp.estado_indicador_desc||'—'}</span>`:'';
+    const prox=fmtF(r.pyp?.fecha_proximo_control);
+    const gst=String(r.gestacion||'').toLowerCase();
+    const esGest=gst.includes('si')||gst==='1'||gst==='true';
+    return `<tr>
+      <td><span class="badge b-${r.tipo.toLowerCase()}">${r.tipo}</span></td>
+      <td style="font-family:monospace;font-size:10.5px">${r.doc}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.nombre}">${r.nombre||'—'}</td>
+      <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.ips}">${r.ips||'—'}</td>
+      <td style="white-space:nowrap">${fmtF(r.ingreso)}</td>
+      <td style="white-space:nowrap">${fmtF(r.egreso)}</td>
+      <td style="font-family:monospace;font-weight:700;font-size:11px">${r.cie}</td>
+      <td style="text-align:center">${r.edad||'—'}</td>
+      <td style="text-align:center">${r.sexo||'—'}</td>
+      <td style="text-align:center"><span class="badge b-${r.cruzado?'si':'no'}">${r.cruzado?'Sí':'No'}</span></td>
+      <td style="text-align:center">${esGest?'<span class="badge" style="background:#f3e5f5;color:#6a1b9a">Sí</span>':'—'}</td>
+      <td style="text-align:center">${r.pyp?.peso_kg||'—'}</td>
+      <td style="text-align:center">${r.pyp?.talla_cm||'—'}</td>
+      <td style="text-align:center">${imcH}</td>
+      <td style="text-align:center">${nR}</td>
+      <td>${pypSt}</td>
+      <td style="white-space:nowrap">${prox}</td>
+    </tr>`;
+  }).join('');
+
+  if(FILT.length>PAGE){
+    tbody.insertAdjacentHTML('beforeend',`<tr><td colspan="17" style="text-align:center;padding:12px;color:#aaa;font-size:11px">
+      Mostrando ${PAGE} de ${FILT.length.toLocaleString('es-CO')} — descarga Excel para ver todos
+    </td></tr>`);
+  }
+}
+
+// ── EXPORTAR ─────────────────────────────────────────────────
+function exportar(){
+  if(!FILT.length){toast('Sin datos','#e74c3c');return;}
+  toast('Generando Excel…','#1a4f7a');
+
+  const data=FILT.map(r=>({
+    'Tipo EDA/IRA':       r.tipo,
+    'Numero Documento':   r.doc,
+    'Nombre Paciente':    r.nombre,
+    'IPS':                r.ips,
+    'Fecha Ingreso':      fmtF(r.ingreso),
+    'Fecha Egreso':       fmtF(r.egreso),
+    'CIE-10':             r.cie,
+    'Diagnostico':        r.diagnostico,
+    'Edad':               r.edad,
+    'Sexo':               r.sexo,
+    'Gestante':           String(r.gestacion||'').toLowerCase().includes('si')?'Sí':'No',
+    'En PyP':             r.cruzado?'Sí':'No',
+    'Codigo IPS PyP':     r.pyp?.codigo_ips||'',
+    'Municipio PyP':      r.pyp?.codigo_municipio||'',
+    'Peso kg':            r.pyp?.peso_kg||'',
+    'Talla cm':           r.pyp?.talla_cm||'',
+    'IMC':                r.imc?r.imc.toFixed(1):'',
+    'Clasificacion IMC':  r.imcLbl||'',
+    'Riesgo Nutricional': r.pyp?.ind_riesgo_nutricional||'',
+    'Estado Indicador':   r.pyp?.estado_indicador_desc||'',
+    'Ind Crecimiento Des':r.pyp?.ind_crecimiento||'',
+    'Ind Embarazo':       r.pyp?.ind_embarazo||'',
+    'Ind Vacunacion':     r.pyp?.ind_vacunacion||'',
+    'Riesgo CV':          r.pyp?.ind_riesgo_cv||'',
+    'Ind HTA':            r.pyp?.ind_hta||'',
+    'Ind DM2':            r.pyp?.ind_dm2||'',
+    'Prox Control':       fmtF(r.pyp?.fecha_proximo_control)||'',
+  }));
+
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wPx=[6,15,30,32,12,12,8,30,5,5,8,8,16,12,8,8,6,14,14,18,14,10,10,10,8,8,14];
+  ws['!cols']=wPx.map(w=>({wch:w}));
+
+  // Hoja resumen
+  const eda=RES.filter(r=>r.tipo==='EDA'), ira=RES.filter(r=>r.tipo==='IRA');
+  const resumen=[
+    {Indicador:'Total EDA',                Valor:eda.length},
+    {Indicador:'EDA con registro PyP',     Valor:eda.filter(r=>r.cruzado).length},
+    {Indicador:'EDA sin registro PyP',     Valor:eda.filter(r=>!r.cruzado).length},
+    {Indicador:'% Cobertura EDA',          Valor:eda.length?((eda.filter(r=>r.cruzado).length/eda.length)*100).toFixed(1)+'%':'0%'},
+    {Indicador:'---',                      Valor:'---'},
+    {Indicador:'Total IRA',                Valor:ira.length},
+    {Indicador:'IRA con registro PyP',     Valor:ira.filter(r=>r.cruzado).length},
+    {Indicador:'IRA sin registro PyP',     Valor:ira.filter(r=>!r.cruzado).length},
+    {Indicador:'% Cobertura IRA',          Valor:ira.length?((ira.filter(r=>r.cruzado).length/ira.length)*100).toFixed(1)+'%':'0%'},
+    {Indicador:'---',                      Valor:'---'},
+    {Indicador:'Total EDA+IRA',            Valor:RES.length},
+    {Indicador:'Gestantes afectadas',      Valor:RES.filter(r=>String(r.gestacion||'').toLowerCase().includes('si')).length},
+    {Indicador:'Con alerta nutricional',   Valor:RES.filter(r=>r.nutriAlert).length},
+    {Indicador:'Fecha cruce',             Valor:new Date().toLocaleString('es-CO')},
+  ];
+  const ws2=XLSX.utils.json_to_sheet(resumen);
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Cruce EDA-IRA PyP');
+  XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
+
+  const fecha=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`Cruce_EDA_IRA_PyP_${fecha}.xlsx`);
+  toast('Excel descargado','#27ae60');
+}
+
+// ── Formatear fecha ───────────────────────────────────────────
+function fmtF(v){
+  if(!v||v==='1800-01-01'||v==='1845-01-01'||v==='—') return '—';
+  if(v instanceof Date) return v.toLocaleDateString('es-CO');
+  const s=String(v).slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){const[y,m,d]=s.split('-');return `${d}/${m}/${y}`;}
+  return String(v);
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function toast(msg,bg='#333'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.background=bg;
+  t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),3200);
+}
+</script>
+</body>
+</html>

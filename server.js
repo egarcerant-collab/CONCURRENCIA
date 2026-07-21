@@ -6,6 +6,7 @@ const XLSX    = require('xlsx');
 const multer  = require('multer');
 const { syncDrive, getLastSyncInfo: getDriveSyncInfo, credentialsExist } = require('./drive-sync');
 const { syncHospital, getLastSyncInfo: getHospitalSyncInfo } = require('./hospital-sync');
+const GDrive  = require('./gdrive-service');
 
 // ── Supabase Storage (mismas credenciales que el frontend) ────
 const SUPA_HOST = 'sstuwlwukjokhjbtelig.supabase.co';
@@ -403,6 +404,80 @@ if (!process.env.VERCEL) {
     syncInProgress = false;
   }, 3000);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// GOOGLE DRIVE — Service Account (sin tokens de usuario)
+// Patrón idéntico a la app PGP (gdrive.ts)
+// Env var requerida: GOOGLE_SERVICE_ACCOUNT_JSON
+// ═══════════════════════════════════════════════════════════════
+
+// Estado del service account
+app.get('/api/gdrive-status', (req, res) => {
+  res.json({ configured: GDrive.isConfigured(), folderId: GDrive.ROOT_FOLDER_ID });
+});
+
+// Escribir/reescribir un archivo en Drive
+// POST /api/gdrive-write  body: { name, content, mimeType?, subfolder? }
+app.post('/api/gdrive-write', express.json({ limit: '100mb' }), async (req, res) => {
+  try {
+    if (!GDrive.isConfigured()) {
+      return res.status(503).json({ ok: false, error: 'Service account no configurado. Agrega GOOGLE_SERVICE_ACCOUNT_JSON en Vercel.' });
+    }
+    const { name, content, mimeType, subfolder } = req.body || {};
+    if (!name || content === undefined) {
+      return res.status(400).json({ ok: false, error: 'Faltan name y content' });
+    }
+    let folderId = GDrive.ROOT_FOLDER_ID;
+    if (subfolder) {
+      const drive = GDrive.getDrive();
+      folderId = await GDrive.getOrCreateSubfolder(drive, GDrive.ROOT_FOLDER_ID, subfolder);
+    }
+    const result = await GDrive.writeFile(folderId, name, content, mimeType || 'application/json');
+    console.log(`[gdrive-write] ✅ ${name} → Drive (${result.updated ? 'actualizado' : 'creado'})`);
+    res.json({ ok: true, ...result, name, folderId });
+  } catch(e) {
+    console.error('[gdrive-write]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Leer un archivo de Drive
+// GET /api/gdrive-read/:name  (opcional: ?subfolder=xxx)
+app.get('/api/gdrive-read/:name', async (req, res) => {
+  try {
+    if (!GDrive.isConfigured()) {
+      return res.status(503).json({ ok: false, error: 'Service account no configurado.' });
+    }
+    let folderId = GDrive.ROOT_FOLDER_ID;
+    if (req.query.subfolder) {
+      const drive = GDrive.getDrive();
+      folderId = await GDrive.getOrCreateSubfolder(drive, GDrive.ROOT_FOLDER_ID, req.query.subfolder);
+    }
+    const content = await GDrive.readFile(folderId, req.params.name);
+    if (content === null) return res.status(404).json({ ok: false, error: 'Archivo no encontrado en Drive' });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.send(content);
+  } catch(e) {
+    console.error('[gdrive-read]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Listar archivos en Drive folder
+app.get('/api/gdrive-list', async (req, res) => {
+  try {
+    if (!GDrive.isConfigured()) return res.json({ ok: false, files: [], error: 'No configurado' });
+    let folderId = GDrive.ROOT_FOLDER_ID;
+    if (req.query.subfolder) {
+      const drive = GDrive.getDrive();
+      folderId = await GDrive.getOrCreateSubfolder(drive, GDrive.ROOT_FOLDER_ID, req.query.subfolder);
+    }
+    const files = await GDrive.listFiles(folderId);
+    res.json({ ok: true, files, folderId });
+  } catch(e) {
+    res.status(500).json({ ok: false, files: [], error: e.message });
+  }
+});
 
 // ── Arrancar servidor ─────────────────────────────────────────
 if (!process.env.VERCEL) {
