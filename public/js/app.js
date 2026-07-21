@@ -938,6 +938,15 @@ const APP = (() => {
           window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
             .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
         }
+        // Supabase: sincronizar fuentes auxiliares para que los compañeros las vean
+        if (sourceKey !== 'detallado' && window.SUPA_DB?.supaUploadDirect) {
+          const tableKey = sourceKey.toUpperCase();
+          const rowsCloud = slimRows(sourceKey, rows);
+          window.SUPA_DB.supaUploadDirect(tableKey, rowsCloud, file.name, { uploadedAt: new Date().toISOString() })
+            .then(ok => {
+              if (ok) toast(`☁️ ${src?.label||sourceKey} compartido — tus compañeros verán esta fuente`, 'success');
+            }).catch(() => {});
+        }
         // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
         if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
           const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
@@ -1046,6 +1055,18 @@ const APP = (() => {
             if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt });
           }
         } catch(e) { console.warn('[Gist] Download error:', e.message); }
+      }
+
+      // 1.5. Supabase Storage — fuentes auxiliares compartidas entre compañeros
+      if ((!d || !d.rows?.length) && window.SUPA_DB?.supaDownload) {
+        try {
+          const sd = await window.SUPA_DB.supaDownload(table);
+          if (sd?.rows?.length) {
+            d = { rows: sd.rows, fileName: sd.fileName || table, uploadedAt: sd.uploadedAt };
+            console.info(`[Supabase] ${key}: ${d.rows.length} filas`);
+            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt }).catch(()=>{});
+          }
+        } catch(e) { console.warn(`[Supabase] ${key}:`, e.message); }
       }
 
       // 2. Google Sheets — respaldo de solo lectura (solo DATOS)
