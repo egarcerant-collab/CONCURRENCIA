@@ -684,23 +684,37 @@ const APP = (() => {
         return;
       }
 
-      toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Google Drive…`, 'info');
-      const csvContent = buildCSV(rows);
-      const resp = await fetch('/api/gdrive-write', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: filename, content: csvContent, mimeType: 'text/csv' }),
-      });
+      // Reducir columnas para fuentes grandes (PyP/Res202 tienen 60-120 cols y 60k+ filas)
+      const rowsSlim = slimRows(sourceKey, rows);
+      const csvContent = buildCSV(rowsSlim);
+      const sizeKB = Math.round(csvContent.length / 1024);
+      toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Drive (${sizeKB} KB)…`, 'info');
+
+      // AbortController: 60s timeout para evitar que el fetch quede colgado indefinidamente
+      const ctrl = new AbortController();
+      const tid  = setTimeout(() => ctrl.abort(), 60000);
+      let resp;
+      try {
+        resp = await fetch('/api/gdrive-write', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: filename, content: csvContent, mimeType: 'text/csv' }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(tid);
+      }
       const result = await resp.json().catch(()=>({}));
       if (result.ok) {
         toast(`✅ ${filename} guardado en Google Drive`, 'success');
       } else {
-        toast(`❌ Drive: ${result.error || 'Error desconocido'}`, 'error');
-        exportCSV(rows, filename);
+        toast(`❌ Drive: ${result.error || `HTTP ${resp.status}`}`, 'error');
+        exportCSV(rowsSlim, filename);
       }
     } catch(e) {
-      exportCSV(rows, filename);
-      toast(`⚠️ ${e.message || 'Error de red'} — descargado localmente`, 'info');
+      const msg = e.name === 'AbortError' ? 'Tiempo de espera agotado (60s)' : (e.message || 'Error de red');
+      exportCSV(slimRows(sourceKey, rows), filename);
+      toast(`⚠️ ${msg} — descargado localmente`, 'info');
     }
   }
 
