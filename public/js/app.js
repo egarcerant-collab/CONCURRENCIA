@@ -3915,6 +3915,49 @@ const APP = (() => {
         </div>
       </div>
 
+      <!-- ── GITHUB GIST ── -->
+      ${(() => {
+        const gCfg = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
+        const hasToken = !!(gCfg.token);
+        const hasGist  = !!(gCfg.gistId);
+        return `
+        <div class="upload-section" style="border:2px solid #24292e;background:linear-gradient(135deg,#f6f8fa,#fff);margin-bottom:20px">
+          <h3 style="color:#24292e;margin:0 0 8px">🐙 GitHub Gist — Sincronización automática</h3>
+          <div style="font-size:11px;color:#555;margin-bottom:12px">
+            El token se guarda solo en <b>este navegador</b> (localStorage). No se envía a ningún servidor externo.
+            ${hasGist ? `<br>✅ Gist activo: <a href="https://gist.github.com/${gCfg.gistId}" target="_blank" style="color:#1a4f7a">${gCfg.gistId.slice(0,12)}…</a>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <input id="gist-token-input" type="password" placeholder="${hasToken ? '●●●●● (token guardado)' : 'ghp_… (Personal Access Token con scope gist)'}"
+              style="flex:1;min-width:260px;padding:9px 14px;border:1.5px solid #d0d7de;border-radius:8px;font-size:12px;font-family:monospace;outline:none">
+            <button onclick="APP.gistConfigSave()"
+              style="padding:9px 18px;background:#24292e;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              💾 Guardar token
+            </button>
+            ${hasToken ? `<button onclick="APP.gistVerificarToken()"
+              style="padding:9px 16px;background:#0969da;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
+              🔍 Verificar
+            </button>
+            <button onclick="APP.gistConfigClear()"
+              style="padding:9px 14px;background:#cf222e;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">
+              🗑️ Limpiar
+            </button>` : ''}
+          </div>
+          <div id="gist-verify-status" style="font-size:11px;color:#555;min-height:16px"></div>
+          ${hasToken && hasGist ? `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid #d0d7de">
+            <button onclick="APP.gistSubirAhora()"
+              style="padding:8px 18px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              ⬆️ Subir datos actuales a Gist
+            </button>
+            <span id="gist-upload-status" style="font-size:11px;color:#555;margin-left:10px"></span>
+          </div>` : ''}
+          <div style="font-size:10px;color:#aaa;margin-top:8px">
+            Genera un token en <b>github.com/settings/tokens</b> → "Generate new token (classic)" → scope: solo ✅ <b>gist</b>
+          </div>
+        </div>`;
+      })()}
+
       <!-- ── OTRAS FUENTES ── -->
       <div class="upload-section">
         <h3>📁 Fuentes de Datos Complementarias</h3>
