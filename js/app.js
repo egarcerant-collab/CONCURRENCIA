@@ -1187,8 +1187,10 @@ const APP = (() => {
       setTimeout(async () => {
         try {
           const gs = await window.SUPA_DB.gSheetsDownload();
-          const gsColsOk = gs?.rows?.length && Object.keys(gs.rows[0]).some(k => normCol(k) === 'direccion');
-          if (gsColsOk && gs.rows.length > state.rows.length) {
+          const gsColsOk = gs?.rows?.length && Object.keys(gs.rows[0]).some(k => normCol(k) === 'ips');
+          const gsMeta = gsColsOk && window.CALCS ? window.CALCS.extractMeta(gs.rows) : {};
+          const gsMoreRecent = gsMeta.fechaMax && (!state.meta?.fechaMax || gsMeta.fechaMax > state.meta.fechaMax);
+          if (gsColsOk && (gs.rows.length > state.rows.length || gsMoreRecent)) {
             console.info(`[GSheets] Datos más recientes: ${gs.rows.length} vs ${state.rows.length} filas actuales`);
             state.rows = gs.rows;
             state.fileNames.detallado = gs.fileName || 'Google Sheets';
