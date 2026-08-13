@@ -1288,7 +1288,7 @@ const APP = (() => {
         const fn = state.fileNames?.detallado || '';
         const fromGist   = fn.includes('Gist') || fn.includes('gist');
         const fromSheets = fn.includes('Sheets') || fn.includes('Google');
-        const sincOk = state.tipoReporte === 1 || fromGist || fromSheets;
+        const sincOk = state.tipoReporte === 1 || fromGist || fromSheets || (state.rows.length > 0 && !!state.uploadedAt.detallado);
         const gistCfg = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
         const gistId  = gistCfg.gistId || '';
         const fuente  = fromGist ? '🐙 GitHub Gist' : fromSheets ? '📊 Google Sheets' : '☁️ Supabase';
