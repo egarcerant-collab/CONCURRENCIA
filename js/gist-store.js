@@ -109,6 +109,13 @@
         let errMsg = `HTTP ${res.status}`;
         try { const j = JSON.parse(err); if (j.message) errMsg = `HTTP ${res.status}: ${j.message}`; } catch(e2) {}
         console.warn('[Gist] Upload error', res.status, err.slice(0, 300));
+        // Token expirado o revocado: limpiar para no seguir intentando
+        if (res.status === 401) {
+          CFG.token = '';
+          CFG.gistId = '';
+          _save();
+          console.warn('[Gist] Token inválido (401) — limpiado de localStorage');
+        }
         return { ok: false, status: res.status, errorMsg: errMsg };
       }
 
