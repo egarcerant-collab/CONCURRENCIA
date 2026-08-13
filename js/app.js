@@ -2535,7 +2535,7 @@ const APP = (() => {
     // Usar RCV file si está cargado, sino DETALLADO
     const srcRows = state.rcvRows.length ? state.rcvRows : state.rows;
     if (!srcRows.length) { el.innerHTML = noData('Carga el archivo BD_RCV o la base DETALLADO'); return; }
-    const d = CALCS.calcRCV(srcRows, state.rows.length ? state.filters : {});
+    const d = CALCS.calcRCV(srcRows, state.rows.length ? state.filters : {}, state.rcvRows.length > 0);
     const fuenteInfo = state.rcvRows.length
       ? `<div style="padding:6px 14px;background:#fff0f0;border-radius:6px;font-size:12px;margin-bottom:12px">❤️ Fuente: <b>${state.fileNames.rcv||'BD_RCV'}</b> — ${fmtN(state.rcvRows.length)} registros</div>`
       : `<div style="padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:12px;margin-bottom:12px">⚠️ Usando DETALLADO como fuente. Para mayor precisión carga el archivo <b>BD_RCV</b> en ⚙️ Datos.</div>`;

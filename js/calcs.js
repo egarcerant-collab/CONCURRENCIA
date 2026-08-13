@@ -98,8 +98,11 @@ const CALCS = (() => {
   // El campo 'Diagnostico' contiene los CÓDIGOS (ej: "A971 -- N390")
   // El campo 'Cie10 Diagnostico' / 'Cie10 Egreso' contienen DESCRIPCIONES de texto
   function getCodes(row) {
-    // Fuente principal: campo Diagnostico (tiene códigos reales separados por " -- ")
-    const raw = String(get(row,'Diagnostico')||'');
+    const raw = String(
+      get(row,'Diagnostico') || get(row,'DIAGNOSTICO') || get(row,'DIAGNOSTICO PRINCIPAL') ||
+      get(row,'Cie10 Diagnostico') || get(row,'CIE10') || get(row,'DIAGNOSTICO CIE10') ||
+      get(row,'Cie10 Egreso') || get(row,'Patologia alto costo') || ''
+    );
     const codes = raw.toUpperCase().match(/[A-Z]\d{2,4}[A-Z0-9]*/g) || [];
     return codes;
   }
@@ -622,9 +625,12 @@ const CALCS = (() => {
   }
 
   // ── 11. RCV ──────────────────────────────────────────────
-  function calcRCV(rows, filters) {
+  function calcRCV(rows, filters, allRCV = false) {
     const r = applyFilters(rows, filters);
-    const isRCV   = row => /cardiovascular|cardiov/i.test(String(get(row,'Programa Riesgo')||get(row,'CLASIFICACION DEL RCV ACTUAL')||''));
+    // allRCV=true cuando viene de BD_RCV dedicada: todos los registros son RCV
+    const isRCV = allRCV
+      ? () => true
+      : row => /cardiovascular|cardiov|rcv|riesgo cardio/i.test(String(get(row,'Programa Riesgo')||get(row,'CLASIFICACION DEL RCV ACTUAL')||get(row,'PROGRAMA')||''));
     const isHTA   = row => esSI(get(row,'DX CONFIRMADO HTA')) || /hta/i.test(String(get(row,'Patologia alto costo')||''));
     const isDM    = row => esSI(get(row,'DX CONFIRMADO DM'))  || /diabetes/i.test(String(get(row,'Patologia alto costo')||''));
     const isHTACtrl = row => esSI(get(row,'HTA CONTROLADA')) || esSI(get(row,'HTA CONTROLADA_1'));
