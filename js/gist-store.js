@@ -116,6 +116,11 @@
           _save();
           console.warn('[Gist] Token inválido (401) — limpiado de localStorage');
         }
+        if (res.status === 404) {
+          CFG.gistId = '';
+          _save();
+          console.warn('[Gist] Gist no encontrado (404) — ID limpiado, próximo intento creará uno nuevo');
+        }
         return { ok: false, status: res.status, errorMsg: errMsg };
       }
 
