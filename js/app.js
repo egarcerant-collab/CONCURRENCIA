@@ -1309,7 +1309,7 @@ const APP = (() => {
               ${gistId ? ` · <a href="https://gist.github.com/${gistId}" target="_blank" style="color:#1a4f7a;font-size:11px">Ver Gist compartido</a>` : ''}
             </div>
           </div>
-          ${gistId ? `<button onclick="APP.gistSubirAhora()" title="Subir versión actual a Gist"
+          ${gistCfg.token ? `<button onclick="APP.gistSubirAhora()" title="Subir versión actual a Gist"
             style="padding:6px 14px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
             ⬆️ Compartir con todos
           </button>` : `<button onclick="APP.navigate('admin')"
