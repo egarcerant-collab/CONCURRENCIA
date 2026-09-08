@@ -242,7 +242,12 @@ const CALCS = (() => {
 
   // ── 2. HOSPITALIZACIÓN ───────────────────────────────────
   function calcHospitalizacion(rows, filters) {
-    const r = applyFilters(rows, filters);
+    const all = applyFilters(rows, filters);
+    // Solo hospitalización real: excluir filas que sean únicamente UCI / Cuidado Intensivo / Intermedio / Urgencias
+    const r = all.filter(row => {
+      const svcs = getServicios(row);
+      return svcs.some(s => /hospitalizaci|observaci|cirugí|cirugi/i.test(s));
+    });
     // Clasificar por servicio real
     const porServicio = {};
     r.forEach(row => {
