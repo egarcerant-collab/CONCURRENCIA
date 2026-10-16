@@ -115,12 +115,8 @@ const APP = (() => {
 
   function openExportModal(rows, name) {
     if (!rows || !rows.length) { toast('Sin datos para exportar','error'); return; }
-    // Eliminar columnas completamente vacías antes de mostrar el modal
-    const allCols = Object.keys(rows[0]).filter(k => k && k !== '');
-    const keepCols = allCols.filter(c => rows.some(r => { const v = r[c]; return v !== '' && v !== null && v !== undefined; }));
-    _exportRows = rows.map(r => { const o = {}; keepCols.forEach(c => { o[c] = r[c]; }); return o; });
-    _exportName = name;
-    const cols = keepCols;
+    _exportRows = rows; _exportName = name;
+    const cols = Object.keys(rows[0]).filter(k => k && k !== '');
     const list = document.getElementById('export-col-list');
     list.innerHTML = cols.map(c => `
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:4px 0;font-weight:600">
@@ -4821,18 +4817,8 @@ const APP = (() => {
 
       // EDA/IRA: exportar 2 archivos separados (uno EDA, uno IRA)
       if (tab === 'edaira') {
-        // Elimina columnas donde todos los valores son vacíos / null / 0 vacío
-        function dropEmptyCols(rowsArr) {
-          if (!rowsArr.length) return rowsArr;
-          const allCols = Object.keys(rowsArr[0]);
-          const keep = allCols.filter(c => rowsArr.some(r => {
-            const v = r[c];
-            return v !== '' && v !== null && v !== undefined;
-          }));
-          return rowsArr.map(r => { const o = {}; keep.forEach(c => { o[c] = r[c]; }); return o; });
-        }
-        const rowsEDA = dropEmptyCols(rows.filter(r => (r['Ruta']||r['ruta']||'') === 'EDA'));
-        const rowsIRA = dropEmptyCols(rows.filter(r => (r['Ruta']||r['ruta']||'') === 'IRA'));
+        const rowsEDA = rows.filter(r => (r['Ruta']||r['ruta']||'') === 'EDA');
+        const rowsIRA = rows.filter(r => (r['Ruta']||r['ruta']||'') === 'IRA');
         const fecha = new Date().toISOString().slice(0,10);
         if (rowsEDA.length) {
           const wsE = XLSX.utils.json_to_sheet(rowsEDA);

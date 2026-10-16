@@ -13,7 +13,7 @@
     try { localStorage.setItem(LS_KEY, JSON.stringify(CFG)); } catch(e) {}
   }
 
-  // Columnas para Gist — excluye textos largos y datos de contacto
+  // Columnas para Gist — incluye datos de contacto para export completo
   const COLS_GIST = [
     'IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
     'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso',
@@ -22,6 +22,7 @@
     'Dx Gestante','Control Prenatal','Reingreso','Auditor','Glosas',
     'Valor Total Glosa','Eventos Adversos','Cantidad Evento no calidad',
     'Patologia alto costo','Especialidad','Patologia Alto Costo','IPS Primaria',
+    'Dirección','Direccion','Teléfonos','Telefonos','Teléfono','Telefono','Celular',
   ];
 
   // Normalizar nombre de columna para comparar sin tildes ni mayúsculas
