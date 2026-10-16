@@ -416,6 +416,42 @@ app.get('/api/gdrive-status', (req, res) => {
   res.json({ configured: GDrive.isConfigured(), folderId: GDrive.ROOT_FOLDER_ID });
 });
 
+// ── Upload por chunks para archivos grandes (>4 MB) ─────────────
+// POST /api/gdrive-write-chunk  body: { sessionId, chunkIndex, totalChunks, name, chunk, mimeType? }
+// Almacena cada chunk en /tmp/gdrive-{sessionId}/ y al recibir el último ensambla y sube a Drive.
+const _chunkStore = {}; // { sessionId: { name, mimeType, chunks: { [idx]: string } } }
+app.post('/api/gdrive-write-chunk', express.json({ limit: '5mb' }), async (req, res) => {
+  try {
+    if (!GDrive.isConfigured()) {
+      return res.status(503).json({ ok: false, error: 'Service account no configurado.' });
+    }
+    const { sessionId, chunkIndex, totalChunks, name, chunk, mimeType } = req.body || {};
+    if (!sessionId || chunkIndex == null || !totalChunks || !name || chunk == null) {
+      return res.status(400).json({ ok: false, error: 'Faltan parámetros de chunk' });
+    }
+
+    if (!_chunkStore[sessionId]) _chunkStore[sessionId] = { name, mimeType: mimeType || 'text/csv', chunks: {} };
+    _chunkStore[sessionId].chunks[chunkIndex] = chunk;
+
+    const received = Object.keys(_chunkStore[sessionId].chunks).length;
+    if (received < totalChunks) {
+      return res.json({ ok: true, received, totalChunks, done: false });
+    }
+
+    // Todos los chunks recibidos — ensamblar y subir
+    const { chunks, mimeType: mt } = _chunkStore[sessionId];
+    delete _chunkStore[sessionId];
+    const content = Array.from({ length: totalChunks }, (_, i) => chunks[i]).join('');
+
+    const result = await GDrive.writeFile(GDrive.ROOT_FOLDER_ID, name, content, mt);
+    console.log(`[gdrive-chunk] ✅ ${name} → Drive (${result.updated ? 'actualizado' : 'creado'}, ${(content.length/1024/1024).toFixed(1)} MB)`);
+    res.json({ ok: true, done: true, ...result, name });
+  } catch(e) {
+    console.error('[gdrive-chunk]', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Escribir/reescribir un archivo en Drive
 // POST /api/gdrive-write  body: { name, content, mimeType?, subfolder? }
 app.post('/api/gdrive-write', express.json({ limit: '100mb' }), async (req, res) => {
