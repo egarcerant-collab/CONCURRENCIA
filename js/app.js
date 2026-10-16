@@ -687,7 +687,25 @@ const APP = (() => {
       // Reducir columnas para fuentes grandes (PyP/Res202 tienen 60-120 cols y 60k+ filas)
       const rowsSlim = slimRows(sourceKey, rows);
       const csvContent = buildCSV(rowsSlim);
+      const sizeMB = csvContent.length / 1024 / 1024;
       const sizeKB = Math.round(csvContent.length / 1024);
+
+      // Vercel tiene límite de 4.5 MB por petición — archivos mayores van a Supabase
+      if (sizeMB > 4) {
+        toast(`⏳ Archivo grande (${sizeMB.toFixed(1)} MB) — guardando en Supabase…`, 'info');
+        const tableKey = sourceKey.toUpperCase();
+        const ok = window.SUPA_DB?.supaUploadDirect
+          ? await window.SUPA_DB.supaUploadDirect(tableKey, rowsSlim, filename, { uploadedAt: new Date().toISOString() })
+          : false;
+        if (ok) {
+          toast(`☁️ ${filename} guardado en Supabase (${sizeMB.toFixed(1)} MB — demasiado grande para Drive directo)`, 'success');
+        } else {
+          exportCSV(rowsSlim, filename);
+          toast(`📥 ${filename} descargado localmente (${sizeMB.toFixed(1)} MB — demasiado grande para Drive)`, 'info');
+        }
+        return;
+      }
+
       toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Drive (${sizeKB} KB)…`, 'info');
 
       // AbortController: 60s timeout para evitar que el fetch quede colgado indefinidamente
