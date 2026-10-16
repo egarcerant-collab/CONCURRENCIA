@@ -690,18 +690,40 @@ const APP = (() => {
       const sizeMB = csvContent.length / 1024 / 1024;
       const sizeKB = Math.round(csvContent.length / 1024);
 
-      // Vercel tiene límite de 4.5 MB por petición — archivos mayores van a Supabase
+      // Archivos >4 MB: upload por chunks para esquivar el límite de Vercel (4.5 MB/petición)
       if (sizeMB > 4) {
-        toast(`⏳ Archivo grande (${sizeMB.toFixed(1)} MB) — guardando en Supabase…`, 'info');
-        const tableKey = sourceKey.toUpperCase();
-        const ok = window.SUPA_DB?.supaUploadDirect
-          ? await window.SUPA_DB.supaUploadDirect(tableKey, rowsSlim, filename, { uploadedAt: new Date().toISOString() })
-          : false;
-        if (ok) {
-          toast(`☁️ ${filename} guardado en Supabase (${sizeMB.toFixed(1)} MB — demasiado grande para Drive directo)`, 'success');
-        } else {
-          exportCSV(rowsSlim, filename);
-          toast(`📥 ${filename} descargado localmente (${sizeMB.toFixed(1)} MB — demasiado grande para Drive)`, 'info');
+        const CHUNK = 3 * 1024 * 1024; // 3 MB por chunk
+        const totalChunks = Math.ceil(csvContent.length / CHUNK);
+        const sessionId = `${sourceKey}_${Date.now()}`;
+        toast(`⏳ Subiendo ${filename} a Drive en ${totalChunks} partes (${sizeMB.toFixed(1)} MB)…`, 'info');
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = csvContent.slice(i * CHUNK, (i + 1) * CHUNK);
+          const ctrl2 = new AbortController();
+          const tid2  = setTimeout(() => ctrl2.abort(), 90000);
+          try {
+            const r = await fetch('/api/gdrive-write-chunk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, chunkIndex: i, totalChunks, name: filename, chunk, mimeType: 'text/csv' }),
+              signal: ctrl2.signal,
+            });
+            clearTimeout(tid2);
+            const rj = await r.json().catch(()=>({}));
+            if (!r.ok || rj.ok === false) {
+              toast(`❌ Error subiendo parte ${i+1}/${totalChunks}: ${rj.error || r.status}`, 'error');
+              exportCSV(rowsSlim, filename);
+              return;
+            }
+            if (rj.done) {
+              toast(`✅ ${filename} guardado en Drive (${sizeMB.toFixed(1)} MB, ${totalChunks} partes)`, 'success');
+              return;
+            }
+          } catch(e2) {
+            clearTimeout(tid2);
+            toast(`⚠️ Error red parte ${i+1}: ${e2.message} — descargando localmente`, 'info');
+            exportCSV(rowsSlim, filename);
+            return;
+          }
         }
         return;
       }
