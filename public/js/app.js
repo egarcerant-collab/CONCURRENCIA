@@ -1400,7 +1400,12 @@ const APP = (() => {
         <div class="chart-card"><h4>Por Servicio</h4><canvas id="ch-hosp-srv" height="270"></canvas></div>
         <div class="chart-card" style="grid-column:1/-1"><h4>Tendencia Mensual</h4><canvas id="ch-hosp-mes" height="200"></canvas></div>
       </div>
-      <div class="data-table-wrap"><h4>Por IPS</h4>${ipsTable(d.porIps)}</div>`;
+      <div class="data-table-wrap"><h4>Por IPS</h4>${ipsTable(d.porIps)}</div>
+      <div class="data-table-wrap"><h4>Listado Pacientes</h4>${buildTable(d.rows,[
+        'IPS','Nombre Paciente','Numero Identificacion','Edad','Sexo',
+        'Fecha Ingreso','Fecha Egreso','Estancia','Servicio','Estado del Egreso',
+        'Diagnostico','Dirección','Teléfonos','Celular'
+      ])}</div>`;
     setTimeout(()=>{
       const topIps = Object.entries(d.porIps).sort((a,b)=>b[1]-a[1]).slice(0,15);
       CHARTS.barras('ch-hosp-ips',topIps.map(x=>x[0]),topIps.map(x=>x[1]),'Pacientes','#1a4f7a');
@@ -4561,7 +4566,8 @@ const APP = (() => {
           'IPS','Departamento','Municipio','Nombre Paciente','Numero Identificacion',
           'Tipo Identificacion','Edad','Sexo','Fecha Ingreso','Fecha Egreso',
           'Estado','Estado del Egreso','Servicio','Diagnostico','Cie10 Diagnostico',
-          'Cie10 Egreso','Estancia','Programa Riesgo','Auditor'
+          'Cie10 Egreso','Estancia','Programa Riesgo','Auditor',
+          'Dirección','Teléfonos','Telefono','Celular','IPS Primaria'
         ];
         // Columnas adicionales según pestaña
         const EXTRA = {
