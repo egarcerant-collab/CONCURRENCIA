@@ -684,76 +684,45 @@ const APP = (() => {
         return;
       }
 
-      // Reducir columnas para fuentes grandes (PyP/Res202 tienen 60-120 cols y 60k+ filas)
-      const rowsSlim = slimRows(sourceKey, rows);
-      const csvContent = buildCSV(rowsSlim);
+      // Subir archivo COMPLETO a Drive (sin reducir columnas)
+      const csvContent = buildCSV(rows);
       const sizeMB = csvContent.length / 1024 / 1024;
-      const sizeKB = Math.round(csvContent.length / 1024);
-
-      // Archivos >4 MB: upload por chunks para esquivar el límite de Vercel (4.5 MB/petición)
-      if (sizeMB > 4) {
-        const CHUNK = 3 * 1024 * 1024; // 3 MB por chunk
-        const totalChunks = Math.ceil(csvContent.length / CHUNK);
-        const sessionId = `${sourceKey}_${Date.now()}`;
-        toast(`⏳ Subiendo ${filename} a Drive en ${totalChunks} partes (${sizeMB.toFixed(1)} MB)…`, 'info');
-        for (let i = 0; i < totalChunks; i++) {
-          const chunk = csvContent.slice(i * CHUNK, (i + 1) * CHUNK);
-          const ctrl2 = new AbortController();
-          const tid2  = setTimeout(() => ctrl2.abort(), 90000);
-          try {
-            const r = await fetch('/api/gdrive-write-chunk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sessionId, chunkIndex: i, totalChunks, name: filename, chunk, mimeType: 'text/csv' }),
-              signal: ctrl2.signal,
-            });
-            clearTimeout(tid2);
-            const rj = await r.json().catch(()=>({}));
-            if (!r.ok || rj.ok === false) {
-              toast(`❌ Error subiendo parte ${i+1}/${totalChunks}: ${rj.error || r.status}`, 'error');
-              exportCSV(rowsSlim, filename);
-              return;
-            }
-            if (rj.done) {
-              toast(`✅ ${filename} guardado en Drive (${sizeMB.toFixed(1)} MB, ${totalChunks} partes)`, 'success');
-              return;
-            }
-          } catch(e2) {
-            clearTimeout(tid2);
-            toast(`⚠️ Error red parte ${i+1}: ${e2.message} — descargando localmente`, 'info');
-            exportCSV(rowsSlim, filename);
+      const CHUNK = 3 * 1024 * 1024; // 3 MB por chunk
+      const totalChunks = Math.ceil(csvContent.length / CHUNK);
+      const sessionId = `${sourceKey}_${Date.now()}`;
+      toast(`⏳ Subiendo ${filename} a Drive en ${totalChunks} parte(s) (${sizeMB.toFixed(1)} MB)…`, 'info');
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = csvContent.slice(i * CHUNK, (i + 1) * CHUNK);
+        const ctrl2 = new AbortController();
+        const tid2  = setTimeout(() => ctrl2.abort(), 90000);
+        try {
+          const r = await fetch('/api/gdrive-write-chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, chunkIndex: i, totalChunks, name: filename, chunk, mimeType: 'text/csv' }),
+            signal: ctrl2.signal,
+          });
+          clearTimeout(tid2);
+          const rj = await r.json().catch(()=>({}));
+          if (!r.ok || rj.ok === false) {
+            toast(`❌ Error subiendo parte ${i+1}/${totalChunks}: ${rj.error || r.status}`, 'error');
+            exportCSV(rows, filename);
             return;
           }
+          if (rj.done) {
+            toast(`✅ ${filename} guardado en Drive (${sizeMB.toFixed(1)} MB · ${rows.length} registros · ${totalChunks} partes)`, 'success');
+            return;
+          }
+        } catch(e2) {
+          clearTimeout(tid2);
+          toast(`⚠️ Error red parte ${i+1}: ${e2.message} — descargando localmente`, 'info');
+          exportCSV(rows, filename);
+          return;
         }
-        return;
-      }
-
-      toast(`⏳ Subiendo ${sourceKey.toUpperCase()} a Drive (${sizeKB} KB)…`, 'info');
-
-      // AbortController: 60s timeout para evitar que el fetch quede colgado indefinidamente
-      const ctrl = new AbortController();
-      const tid  = setTimeout(() => ctrl.abort(), 60000);
-      let resp;
-      try {
-        resp = await fetch('/api/gdrive-write', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: filename, content: csvContent, mimeType: 'text/csv' }),
-          signal: ctrl.signal,
-        });
-      } finally {
-        clearTimeout(tid);
-      }
-      const result = await resp.json().catch(()=>({}));
-      if (result.ok) {
-        toast(`✅ ${filename} guardado en Google Drive`, 'success');
-      } else {
-        toast(`❌ Drive: ${result.error || `HTTP ${resp.status}`}`, 'error');
-        exportCSV(rowsSlim, filename);
       }
     } catch(e) {
-      const msg = e.name === 'AbortError' ? 'Tiempo de espera agotado (60s)' : (e.message || 'Error de red');
-      exportCSV(slimRows(sourceKey, rows), filename);
+      const msg = e.name === 'AbortError' ? 'Tiempo de espera agotado (90s)' : (e.message || 'Error de red');
+      exportCSV(rows, filename);
       toast(`⚠️ ${msg} — descargado localmente`, 'info');
     }
   }
@@ -992,15 +961,7 @@ const APP = (() => {
           window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
             .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
         }
-        // Supabase: sincronizar fuentes auxiliares para que los compañeros las vean
-        if (sourceKey !== 'detallado' && window.SUPA_DB?.supaUploadDirect) {
-          const tableKey = sourceKey.toUpperCase();
-          const rowsCloud = slimRows(sourceKey, rows);
-          window.SUPA_DB.supaUploadDirect(tableKey, rowsCloud, file.name, { uploadedAt: new Date().toISOString() })
-            .then(ok => {
-              if (ok) toast(`☁️ ${src?.label||sourceKey} compartido — tus compañeros verán esta fuente`, 'success');
-            }).catch(() => {});
-        }
+        // Supabase desactivado — todo se gestiona desde Drive
         // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
         if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
           const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
