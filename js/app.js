@@ -577,12 +577,6 @@ const APP = (() => {
         }
       }
 
-      // Google Sheets: sincronización automática si está configurado
-      if (window.SUPA_DB?.gSheetsWrite) {
-        const gscriptUrl = (() => { try { return localStorage.getItem('gscript_url') || ''; } catch(e) { return ''; } })();
-        if (gscriptUrl) window.SUPA_DB.gSheetsWrite(gscriptUrl, rows).catch(()=>{});
-      }
-
       // Drive: sincronización automática para compañeros (JSON con nombre fijo)
       driveAutoSync('DETALLADO', rows, file.name);
     });
@@ -966,15 +960,6 @@ const APP = (() => {
         }
         // Drive: sync automático para fuentes auxiliares
         driveAutoSync(sourceKey.toUpperCase(), rows, file.name);
-        // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
-        if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
-          const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
-          if (gscriptUrl) {
-            toast('📊 Sincronizando con Google Sheets…', 'info');
-            window.SUPA_DB.gSheetsWrite(gscriptUrl, rows)
-              .then(() => toast('✅ Google Sheets actualizado — todos los compañeros verán los datos nuevos', 'success'));
-          }
-        }
         // GitHub Gist: almacenamiento compartido principal (sin egress, sin cuenta corporativa)
         if (sourceKey === 'detallado' && window.GIST_STORE_API?.gistUpload) {
           const gCfg = window.GIST_STORE_API.gistGetConfig();
@@ -1130,7 +1115,7 @@ const APP = (() => {
         try {
           const drv = await driveLoad(table);
           if (drv?.rows?.length) {
-            d = drv;
+            d = { ...drv, fileName: 'Google Drive' };
             console.info(`[Drive] ${key}: ${d.rows.length} filas`);
             if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt }).catch(()=>{});
           }
@@ -1223,32 +1208,6 @@ const APP = (() => {
       if (!silencioso) toast('⚠️ Sin datos. Sube el archivo Excel en el panel Administrador.','info');
     }
 
-    // ── Verificación silenciosa: Google Sheets puede tener datos más recientes ──
-    // Si GSheets tiene MÁS filas que el IDB/Supabase actual → actualiza automáticamente
-    if (!forzarNube && window.SUPA_DB?.gSheetsDownload) {
-      setTimeout(async () => {
-        try {
-          const gs = await window.SUPA_DB.gSheetsDownload();
-          const gsColsOk = gs?.rows?.length && Object.keys(gs.rows[0]).some(k => normCol(k) === 'ips');
-          const gsMeta = gsColsOk && window.CALCS ? window.CALCS.extractMeta(gs.rows) : {};
-          const gsMoreRecent = gsMeta.fechaMax && (!state.meta?.fechaMax || gsMeta.fechaMax > state.meta.fechaMax);
-          if (gsColsOk && (gs.rows.length > state.rows.length || gsMoreRecent)) {
-            console.info(`[GSheets] Datos más recientes: ${gs.rows.length} vs ${state.rows.length} filas actuales`);
-            state.rows = gs.rows;
-            state.fileNames.detallado = gs.fileName || 'Google Sheets';
-            state.uploadedAt.detallado = gs.uploadedAt;
-            state.meta = window.CALCS ? window.CALCS.extractMeta(gs.rows) : state.meta;
-            if (window.IDB_STORE_API) {
-              window.IDB_STORE_API.idbSave('detallado', gs.rows, { fileName: 'Google Sheets', uploadedAt: gs.uploadedAt });
-            }
-            render();
-            updateStatusBar();
-            toast(`✅ Datos actualizados desde Google Sheets: ${fmtN(gs.rows.length)} registros`, 'success');
-          }
-        } catch(e) { console.warn('[GSheets background] error:', e.message); }
-      }, 3000); // 3 s después del load inicial para no bloquear el render
-    }
-
     // ── Verificación silenciosa: GitHub Gist puede tener datos más recientes ──
     if (!forzarNube && window.GIST_STORE_API?.gistIsReady()) {
       setTimeout(async () => {
@@ -1330,12 +1289,13 @@ const APP = (() => {
       <!-- Banner estado sincronización -->
       ${(() => {
         const fn = state.fileNames?.detallado || '';
+        const fromDrive  = fn === 'Google Drive';
         const fromGist   = fn.includes('Gist') || fn.includes('gist');
-        const fromSheets = fn.includes('Sheets') || fn.includes('Google');
-        const sincOk = state.tipoReporte === 1 || fromGist || fromSheets || (state.rows.length > 0 && !!state.uploadedAt.detallado);
+        const fromSheets = !fromDrive && (fn.includes('Sheets') || fn.includes('Google'));
+        const sincOk = state.tipoReporte === 1 || fromGist || fromSheets || fromDrive || (state.rows.length > 0 && !!state.uploadedAt.detallado);
         const gistCfg = window.GIST_STORE_API ? window.GIST_STORE_API.gistGetConfig() : {};
         const gistId  = gistCfg.gistId || '';
-        const fuente  = fromGist ? '🐙 GitHub Gist' : fromSheets ? '📊 Google Sheets' : '☁️ Supabase';
+        const fuente  = fromDrive ? '☁️ Google Drive' : fromGist ? '🐙 GitHub Gist' : fromSheets ? '📊 Google Sheets' : '💾 Cargado';
         return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 16px;border-radius:10px;flex-wrap:wrap;${sincOk?'background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:1.5px solid #a5d6a7':'background:linear-gradient(135deg,#fff3e0,#fff8e1);border:2px solid #ff9800'}">
           <span style="font-size:18px">${sincOk?'✅':'⚠️'}</span>
           <div style="flex:1;min-width:200px">
