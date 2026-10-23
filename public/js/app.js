@@ -583,15 +583,8 @@ const APP = (() => {
         if (gscriptUrl) window.SUPA_DB.gSheetsWrite(gscriptUrl, rows).catch(()=>{});
       }
 
-      // Supabase: sincronización automática para compañeros (columnas esenciales)
-      if (window.SUPA_DB?.supaUploadDirect) {
-        toast('☁️ Sincronizando con compañeros…', 'info');
-        window.SUPA_DB.supaUploadDirect('DATOS', rows, file.name,
-          { tipoReporte: 1, source: 'manual-upload', uploadedAt: new Date().toISOString() })
-          .then(ok => {
-            if (ok) toast('✅ Datos disponibles para todos los compañeros', 'success');
-          }).catch(() => {});
-      }
+      // Drive: sincronización automática para compañeros (JSON con nombre fijo)
+      driveAutoSync('DETALLADO', rows, file.name);
     });
   }
 
@@ -971,7 +964,8 @@ const APP = (() => {
           window.IDB_STORE_API.idbSave(sourceKey, rows, { fileName: file.name, uploadedAt: new Date().toISOString() })
             .then(ok => { if (ok) console.info(`[IDB] ${sourceKey}: ${rows.length} filas guardadas`); });
         }
-        // Supabase desactivado — todo se gestiona desde Drive
+        // Drive: sync automático para fuentes auxiliares
+        driveAutoSync(sourceKey.toUpperCase(), rows, file.name);
         // Google Sheets: sincronizar automáticamente si el Apps Script está configurado
         if (sourceKey === 'detallado' && window.SUPA_DB?.gSheetsWrite) {
           const gscriptUrl = (function(){ try{ return localStorage.getItem('gscript_url')||''; }catch(e){ return ''; } })();
@@ -1045,9 +1039,58 @@ const APP = (() => {
   }
 
   let _lastLoad = 0;
-  const IDB_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 días — evita caer en GSheets con datos viejos
+  const IDB_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-  // Cascada: IDB (cache 7d) → GitHub Gist → Google Sheets → IDB (viejo) → localStorage
+  // ── Google Drive sync ─────────────────────────────────────────
+  // Nombre fijo por fuente para que los compañeros sepan qué descargar
+  const DRIVE_FILE = key => `${key}_AUDITORIA.json`;
+
+  // Sube datos a Drive en segundo plano (chunks si >4MB)
+  async function driveAutoSync(tableKey, rows, fileName) {
+    try {
+      const statusResp = await fetch('/api/gdrive-status').catch(()=>null);
+      const status = statusResp?.ok ? await statusResp.json().catch(()=>({})) : {};
+      if (!status.configured) return;
+
+      const payload = JSON.stringify({ rows, fileName, uploadedAt: new Date().toISOString() });
+      const name = DRIVE_FILE(tableKey);
+      const CHUNK = 3 * 1024 * 1024;
+      const total = Math.ceil(payload.length / CHUNK);
+      const sid   = `${tableKey}_${Date.now()}`;
+      for (let i = 0; i < total; i++) {
+        const chunk = payload.slice(i * CHUNK, (i + 1) * CHUNK);
+        const r = await fetch('/api/gdrive-write-chunk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sid, chunkIndex: i, totalChunks: total, name, chunk, mimeType: 'application/json' }),
+          signal: AbortSignal.timeout(90000),
+        });
+        const rj = await r.json().catch(()=>({}));
+        if (!r.ok || rj.ok === false) { console.warn(`[Drive] chunk ${i} error:`, rj.error); return; }
+        if (rj.done) {
+          toast(`✅ Datos en Drive — compañeros actualizados (${rows.length} registros)`, 'success');
+          return;
+        }
+      }
+    } catch(e) { console.warn('[Drive] autoSync error:', e.message); }
+  }
+
+  // Descarga datos desde Drive (JSON fijo por fuente)
+  async function driveLoad(tableKey) {
+    try {
+      const statusResp = await fetch('/api/gdrive-status').catch(()=>null);
+      const status = statusResp?.ok ? await statusResp.json().catch(()=>({})) : {};
+      if (!status.configured) return null;
+      const resp = await fetch(`/api/gdrive-read/${DRIVE_FILE(tableKey)}`,
+        { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) return null;
+      const data = await resp.json().catch(()=>null);
+      if (!data?.rows?.length) return null;
+      return { rows: data.rows, fileName: data.fileName || tableKey, uploadedAt: data.uploadedAt };
+    } catch(e) { console.warn(`[Drive] load ${tableKey}:`, e.message); return null; }
+  }
+
+  // Cascada: IDB (cache 7d) → GitHub Gist → Drive → IDB (viejo) → localStorage
   async function loadSaved(silencioso = false, forzarNube = false) {
     const tables = {detallado:'DATOS', rcv:'RCV', aiu:'AIU', dnt:'DNT', cyd:'CYD', estancia:'ESTANCIA', pyp:'PYP', res202:'RES202'};
 
@@ -1082,28 +1125,16 @@ const APP = (() => {
         } catch(e) { console.warn('[Gist] Download error:', e.message); }
       }
 
-      // 1.5. Supabase Storage — fuentes auxiliares compartidas entre compañeros
-      if ((!d || !d.rows?.length) && window.SUPA_DB?.supaDownload) {
+      // 1.5. Google Drive — fuente compartida para compañeros
+      if (!d || !d.rows?.length) {
         try {
-          const sd = await window.SUPA_DB.supaDownload(table);
-          if (sd?.rows?.length) {
-            d = { rows: sd.rows, fileName: sd.fileName || table, uploadedAt: sd.uploadedAt };
-            console.info(`[Supabase] ${key}: ${d.rows.length} filas`);
+          const drv = await driveLoad(table);
+          if (drv?.rows?.length) {
+            d = drv;
+            console.info(`[Drive] ${key}: ${d.rows.length} filas`);
             if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: d.fileName, uploadedAt: d.uploadedAt }).catch(()=>{});
           }
-        } catch(e) { console.warn(`[Supabase] ${key}:`, e.message); }
-      }
-
-      // 2. Google Sheets — respaldo de solo lectura (solo DATOS)
-      if ((!d || !d.rows?.length) && table === 'DATOS' && window.SUPA_DB?.gSheetsDownload) {
-        try {
-          d = await window.SUPA_DB.gSheetsDownload();
-          if (d?.rows?.length) {
-            console.info('[GSheets] DATOS: cargado desde Google Sheets');
-            if (!silencioso) toast('📊 Datos desde Google Sheets', 'info');
-            if (window.IDB_STORE_API) window.IDB_STORE_API.idbSave(key, d.rows, { fileName: 'Google Sheets', uploadedAt: d.uploadedAt });
-          }
-        } catch(e) {}
+        } catch(e) { console.warn(`[Drive] ${key}:`, e.message); }
       }
 
       // 3. IndexedDB — cualquier versión (aunque sea vieja)
