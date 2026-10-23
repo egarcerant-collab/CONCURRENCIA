@@ -582,6 +582,16 @@ const APP = (() => {
         const gscriptUrl = (() => { try { return localStorage.getItem('gscript_url') || ''; } catch(e) { return ''; } })();
         if (gscriptUrl) window.SUPA_DB.gSheetsWrite(gscriptUrl, rows).catch(()=>{});
       }
+
+      // Supabase: sincronización automática para compañeros (columnas esenciales)
+      if (window.SUPA_DB?.supaUploadDirect) {
+        toast('☁️ Sincronizando con compañeros…', 'info');
+        window.SUPA_DB.supaUploadDirect('DATOS', rows, file.name,
+          { tipoReporte: 1, source: 'manual-upload', uploadedAt: new Date().toISOString() })
+          .then(ok => {
+            if (ok) toast('✅ Datos disponibles para todos los compañeros', 'success');
+          }).catch(() => {});
+      }
     });
   }
 
