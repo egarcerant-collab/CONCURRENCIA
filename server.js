@@ -411,6 +411,34 @@ if (!process.env.VERCEL) {
 // Env var requerida: GOOGLE_SERVICE_ACCOUNT_JSON
 // ═══════════════════════════════════════════════════════════════
 
+// ── Gist compartido: el admin sube su gistId y todos los compañeros lo reciben ──
+let _sharedGistId = process.env.GIST_ID || '';
+let _gistDiscoverTime = 0;
+
+app.get('/api/gist-config', async (req, res) => {
+  if (_sharedGistId) return res.json({ gistId: _sharedGistId });
+  // Auto-descubrir desde GitHub si hay usuario configurado
+  const ghUser = process.env.GITHUB_GIST_USER;
+  if (ghUser && Date.now() - _gistDiscoverTime > 3600000) {
+    try {
+      const r = await fetch(`https://api.github.com/users/${ghUser}/gists?per_page=30`);
+      const gists = await r.json();
+      const found = Array.isArray(gists) && gists.find(g => g.description === 'Dusakawi EPS — Auditoría Hospitalaria');
+      if (found) { _sharedGistId = found.id; _gistDiscoverTime = Date.now(); }
+    } catch(e) {}
+  }
+  res.json({ gistId: _sharedGistId });
+});
+
+app.post('/api/gist-config', express.json({ limit: '1kb' }), (req, res) => {
+  const { gistId } = req.body || {};
+  if (gistId && typeof gistId === 'string' && gistId.length > 8) {
+    _sharedGistId = gistId;
+    console.info('[Gist] ID compartido guardado:', gistId.slice(0,8));
+  }
+  res.json({ ok: true });
+});
+
 // Estado del service account
 app.get('/api/gdrive-status', (req, res) => {
   res.json({ configured: GDrive.isConfigured(), folderId: GDrive.ROOT_FOLDER_ID });
