@@ -1,4 +1,4 @@
-// ── GitHub Gist — almacenamiento compartido sin costo ────────
+// ── GitHub Gist — almacenamiento compartido — gistId se comparte via servidor ─
 // Formato comprimido: arrays en vez de objetos (ahorra ~60% de tamaño)
 // Subir: requiere PAT con scope "gist" | Descargar: URL pública sin auth
 (function () {
@@ -131,6 +131,8 @@
         _save();
         console.info('[Gist] Nuevo gist creado:', CFG.gistId);
       }
+      // Compartir gistId con el servidor para que compañeros lo reciban automáticamente
+      fetch('/api/gist-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ gistId: CFG.gistId }) }).catch(()=>{});
       console.info(`[Gist] ✅ ${key} subido — ${rows.length} filas · ${sizeMB} MB`);
       return { ok: true };
     } catch (e) {

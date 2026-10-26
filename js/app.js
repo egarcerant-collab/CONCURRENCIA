@@ -4299,6 +4299,17 @@ const APP = (() => {
           <div style="font-size:13px;color:#888">Conectando con Supabase — esto solo toma unos segundos</div>
         </div>
         <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
+      // Auto-configurar Gist para compañeros (reciben el ID del servidor)
+      try {
+        const gcfg = await fetch('/api/gist-config').then(r => r.json()).catch(()=>({}));
+        if (gcfg.gistId && window.GIST_STORE_API) {
+          const cur = window.GIST_STORE_API.gistGetConfig();
+          if (!cur.gistId) {
+            window.GIST_STORE_API.gistSetConfig({ gistId: gcfg.gistId });
+            console.info('[Gist] ID recibido del servidor:', gcfg.gistId.slice(0,8));
+          }
+        }
+      } catch(e) {}
       await loadSaved();
       navigate('dashboard');
       iniciarAutoRefresh(); // ← refresco cada 30 min + al volver a la pestaña
