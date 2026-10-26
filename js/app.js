@@ -1208,6 +1208,30 @@ const APP = (() => {
       if (!silencioso) toast('⚠️ Sin datos. Sube el archivo Excel en el panel Administrador.','info');
     }
 
+    // ── Verificación silenciosa: Google Drive puede tener datos más recientes ──
+    // Siempre verifica Drive en background — resuelve el problema de caché IDB
+    setTimeout(async () => {
+      try {
+        const drv = await driveLoad('detallado');
+        if (!drv?.rows?.length) return;
+        const driveNewer = drv.uploadedAt && (!state.uploadedAt.detallado || drv.uploadedAt > state.uploadedAt.detallado);
+        const driveMore  = drv.rows.length > state.rows.length;
+        if (driveNewer || driveMore) {
+          console.info(`[Drive bg] Datos más recientes: ${drv.rows.length} filas, ${drv.uploadedAt}`);
+          state.rows = drv.rows;
+          state.fileNames.detallado = 'Google Drive';
+          state.uploadedAt.detallado = drv.uploadedAt;
+          state.meta = window.CALCS ? window.CALCS.extractMeta(drv.rows) : state.meta;
+          if (window.IDB_STORE_API) {
+            window.IDB_STORE_API.idbSave('detallado', drv.rows, { fileName: 'Google Drive', uploadedAt: drv.uploadedAt }).catch(()=>{});
+          }
+          render();
+          updateStatusBar();
+          toast(`✅ Datos actualizados desde Drive: ${fmtN(drv.rows.length)} registros`, 'success');
+        }
+      } catch(e) { console.warn('[Drive bg] error:', e.message); }
+    }, 4000);
+
     // ── Verificación silenciosa: GitHub Gist puede tener datos más recientes ──
     if (!forzarNube && window.GIST_STORE_API?.gistIsReady()) {
       setTimeout(async () => {
@@ -1227,7 +1251,7 @@ const APP = (() => {
             toast(`✅ Datos actualizados desde GitHub Gist: ${fmtN(gd.rows.length)} registros`, 'success');
           }
         } catch(e) { console.warn('[Gist background] error:', e.message); }
-      }, 5000); // 5 s para no coincidir con el check de GSheets
+      }, 8000);
     }
   }
 
