@@ -1260,7 +1260,7 @@ const APP = (() => {
     setInterval(async () => {
       await loadSaved(true);
       render();
-    }, REFRESH_MS);
+    }, 30 * 60 * 1000);
 
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
